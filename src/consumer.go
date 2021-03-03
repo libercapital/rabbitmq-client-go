@@ -1,4 +1,4 @@
-package rabbitmq
+package src
 
 import "github.com/streadway/amqp"
 
