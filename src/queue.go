@@ -15,8 +15,8 @@ type QueueDeclareConfig struct {
 	Args       amqp.Table
 }
 
-func CreateQueue(config *QueueDeclareConfig, client *rabbitMQClient) amqp.Queue {
-	queue, err := client.Channel.QueueDeclare(
+func CreateQueue(config *QueueDeclareConfig, channel *amqp.Channel) amqp.Queue {
+	queue, err := channel.QueueDeclare(
 		config.QueueName,
 		config.Durable,
 		config.AutoDelete,

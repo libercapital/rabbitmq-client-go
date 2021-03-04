@@ -17,8 +17,8 @@ type ConsumerConfig struct {
 	Args      amqp.Table
 }
 
-func Consume(config *ConsumerConfig, client *rabbitMQClient) <-chan amqp.Delivery {
-	messages, err := client.Channel.Consume(
+func Consume(config *ConsumerConfig, channel *amqp.Channel) <-chan amqp.Delivery {
+	messages, err := channel.Consume(
 		config.QueueName,
 		config.Consumer,
 		config.AutoAck,

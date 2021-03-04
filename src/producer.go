@@ -15,8 +15,8 @@ type ProducerConfig struct {
 	PublishConfig amqp.Publishing
 }
 
-func Publish(config *ProducerConfig, client *rabbitMQClient) {
-	err := client.Channel.Publish(
+func Publish(config *ProducerConfig, channel *amqp.Channel) {
+	err := channel.Publish(
 		config.Exchange,
 		config.RoutingKey,
 		config.Mandatory,
