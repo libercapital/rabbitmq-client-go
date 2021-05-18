@@ -13,7 +13,7 @@ type Client interface {
 }
 
 type clientImpl struct {
-	channel *amqp.Channel
+	connection *amqp.Connection
 }
 
 func New(credential models.Credential) (Client, error) {
@@ -22,12 +22,7 @@ func New(credential models.Credential) (Client, error) {
 		return nil, fmt.Errorf("connection error: %v", err)
 	}
 
-	ch, err := conn.Channel()
-	if err != nil {
-		return nil, fmt.Errorf("channel connection error: %v", err)
-	}
-
-	return clientImpl{channel: ch}, nil
+	return clientImpl{connection: conn}, nil
 }
 
 func (client clientImpl) NewPublisher(args *models.QueueArgs) (Publisher, error) {
@@ -35,22 +30,24 @@ func (client clientImpl) NewPublisher(args *models.QueueArgs) (Publisher, error)
 		args = &models.QueueArgs{}
 	}
 
-	queue, err := client.channel.QueueDeclare(args.Name, args.Durable, args.AutoDelete, args.Exclusive, args.NoWait, nil)
+	channel, err := client.connection.Channel()
+	if err != nil {
+		return nil, fmt.Errorf("channel connection error: %v", err)
+	}
+
+	queue, err := channel.QueueDeclare(args.Name, args.Durable, args.AutoDelete, args.Exclusive, args.NoWait, nil)
 	if err != nil {
 		return nil, fmt.Errorf("queue connection error: %v", err)
 	}
 
-	return publisherImpl{channel: client.channel, queue: &queue}, nil
+	return publisherImpl{channel: channel, queue: &queue}, nil
 }
 
 func (client clientImpl) NewConsumer(queueName string) (Consumer, error) {
-	if err := client.channel.Qos(
-		1,     // prefetch count
-		0,     // prefetch size
-		false, // global
-	); err != nil {
-		return nil, err
+	channel, err := client.connection.Channel()
+	if err != nil {
+		return nil, fmt.Errorf("channel connection error: %v", err)
 	}
 
-	return consumerImpl{channel: client.channel, queueName: queueName}, nil
+	return consumerImpl{channel: channel, queueName: queueName}, nil
 }

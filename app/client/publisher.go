@@ -8,7 +8,7 @@ import (
 )
 
 type Publisher interface {
-	GetName() (*string, error)
+	GetQueueName() (*string, error)
 	SendMessage(exchange string, routingKey string, mandatory bool, immediate bool, message models.PublishingMessage) error
 }
 
@@ -31,7 +31,7 @@ func (queue publisherImpl) SendMessage(exchange string, routingKey string, manda
 	)
 }
 
-func (queue publisherImpl) GetName() (*string, error) {
+func (queue publisherImpl) GetQueueName() (*string, error) {
 	if queue.queue == nil {
 		return nil, fmt.Errorf("not connect to a queue")
 	}
