@@ -3,6 +3,8 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"time"
 
 	"github.com/streadway/amqp"
 	"gitlab.com/icredit/bava/architecture/software/libs/go-modules/rabbitmq-client.git/app/models"
@@ -62,39 +64,44 @@ func (consumer consumerImpl) getEvents(ctx context.Context, consumerEvent models
 }
 
 func (consumer consumerImpl) ReadMessage(ctx context.Context, correlationID string, consumerEvent models.ConsumerEvent) error {
+	var timer time.Timer
+	if consumerEvent.Timeout > 0 {
+		timer = *time.NewTimer(time.Duration(consumerEvent.Timeout) * time.Second)
+	}
+
+	messages, err := consumer.channel.Consume(consumer.queueName, "", false, false, false, false, nil)
+	if err != nil {
+		return err
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
-		default:
-			messages, err := consumer.channel.Consume(consumer.queueName, "", false, false, false, false, nil)
-			if err != nil {
-				return err
+		case <-timer.C:
+			return errors.New("consumer timeout reached")
+		case message := <-messages:
+			var body []byte
+			if message.Body != nil {
+				body = message.Body
+			}
+			var event models.IncomingEventMessage
+			if err := json.Unmarshal(body, &event); err != nil {
+				message.Nack(false, false) //To move to dlq we need to send a Nack with requeue = false
+				continue
 			}
 
-			for message := range messages {
-				var body []byte
-				if message.Body != nil {
-					body = message.Body
-				}
-				var event models.IncomingEventMessage
-				if err := json.Unmarshal(body, &event); err != nil {
-					message.Nack(false, false) //To move to dlq we need to send a Nack with requeue = false
-					continue
-				}
+			if message.CorrelationId == correlationID {
+				success := consumerEvent.Handler(event)
 
-				if message.CorrelationId == correlationID {
-					success := consumerEvent.Handler(event)
-
-					if success {
-						message.Ack(true)
-						return nil
-					} else {
-						message.Nack(false, true) //Requeue true because we are searching by specif message
-					}
+				if success {
+					message.Ack(true)
+					return nil
 				} else {
 					message.Nack(false, true) //Requeue true because we are searching by specif message
 				}
+			} else {
+				message.Nack(false, true) //Requeue true because we are searching by specif message
 			}
 		}
 	}

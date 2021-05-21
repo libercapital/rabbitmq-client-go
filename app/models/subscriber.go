@@ -6,7 +6,8 @@ type ConsumerEvent struct {
 	QueueName          string
 	Handler            ConsumerEventHandler
 	RetryMessagePeriod int
-	CloseOnSuccess     bool `default:"false"`
+	//Seconds to timeout consume event
+	Timeout int
 }
 
 type IncomingEventMessage struct {
