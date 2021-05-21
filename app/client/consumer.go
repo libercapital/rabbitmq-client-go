@@ -6,6 +6,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/streadway/amqp"
 	"gitlab.com/icredit/bava/architecture/software/libs/go-modules/rabbitmq-client.git/app/models"
 	"golang.org/x/sync/errgroup"
@@ -64,15 +65,18 @@ func (consumer consumerImpl) getEvents(ctx context.Context, consumerEvent models
 }
 
 func (consumer consumerImpl) ReadMessage(ctx context.Context, correlationID string, consumerEvent models.ConsumerEvent) error {
+	tag := uuid.NewString()
 	var timer time.Timer
 	if consumerEvent.Timeout > 0 {
 		timer = *time.NewTimer(time.Duration(consumerEvent.Timeout) * time.Second)
 	}
 
-	messages, err := consumer.channel.Consume(consumer.queueName, "", false, false, false, false, nil)
+	messages, err := consumer.channel.Consume(consumer.queueName, tag, false, false, false, false, nil)
 	if err != nil {
 		return err
 	}
+
+	defer consumer.channel.Cancel(tag, false)
 
 	for {
 		select {
