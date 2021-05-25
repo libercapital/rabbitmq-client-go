@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/streadway/amqp"
-	"gitlab.com/icredit/bava/architecture/software/libs/go-modules/rabbitmq-client.git/app/models"
+	"gitlab.com/bavatech/architecture/software/libs/go-modules/rabbitmq-client.git/app/models"
 )
 
 type Publisher interface {

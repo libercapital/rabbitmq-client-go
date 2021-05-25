@@ -1,4 +1,4 @@
-module gitlab.com/icredit/bava/architecture/software/libs/go-modules/rabbitmq-client.git
+module gitlab.com/bavatech/architecture/software/libs/go-modules/rabbitmq-client.git
 
 go 1.16
 
