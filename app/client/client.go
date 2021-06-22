@@ -27,7 +27,7 @@ func New(credential models.Credential) (Client, error) {
 
 func (client clientImpl) NewPublisher(args *models.QueueArgs) (Publisher, error) {
 	if args == nil {
-		args = &models.QueueArgs{}
+		return nil, fmt.Errorf("args should not be nil")
 	}
 
 	channel, err := client.connection.Channel()
