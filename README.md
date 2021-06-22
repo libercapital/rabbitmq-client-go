@@ -1,4 +1,5 @@
 
+
 # Welcome to RabbitMQ client module 👋
 
 ![Version](https://img.shields.io/badge/version-0.0.6-blue.svg?cacheSeconds=2592000)
@@ -38,9 +39,12 @@ client, err := rabbit_client.New(credential)
 
 Create new publisher 
 ```go
-publisher, err := client.NewPublisher(&rabbit_models.QueueArgs{
-  Name: "queue-name",
-})
+publisher, err := client.NewPublisher(
+  &rabbit_models.QueueArgs{
+    Name: "queue-name",
+  },
+  nil,
+)
 ```
 
 Sending message
@@ -76,14 +80,17 @@ err := queue.SendMessage(
 
 Create new publisher 
 ```go
-publisher, err := clientRouting.NewPublisher(&rabbit_models.ExchangeArgs{
-  Name : "exchange-name",
-  Type : "direct",
-  Durable : false,
-  AutoDelete : false,
-  Internal : false,
-  NoWait : false,
-})
+publisher, err := client.NewPublisher(
+  nil,
+  &rabbit_models.ExchangeArgs{
+    Name : "exchange-name",
+    Type : "direct",
+    Durable : false,
+    AutoDelete : false,
+    Internal : false,
+    NoWait : false,
+  },
+)
 ```
 
 Sending message
@@ -143,7 +150,7 @@ err = consumer.SubscribeEvents(ctx, event)
 ### Simple routing key consumer code
 
 ```go
-consumer, err := clientRouting.NewConsumer(&rabbit_models.ExchangeArgs{
+consumer, err := client.NewConsumerExchange(&rabbit_models.ExchangeArgs{
   Name : "exchange-name",
   Type : "direct",
   Durable : false,
