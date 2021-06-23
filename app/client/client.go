@@ -33,6 +33,10 @@ func (client clientImpl) NewPublisher(queueArgs *models.QueueArgs, exchangeArgs 
 
 	channel, err := client.connection.Channel()
 	if err != nil {
+		return nil, fmt.Errorf("channel connection error: %v", err)
+	}
+
+	if queueArgs != nil {
 		queue, err := channel.QueueDeclare(queueArgs.Name, queueArgs.Durable, queueArgs.AutoDelete, queueArgs.Exclusive, queueArgs.NoWait, nil)
 		if err != nil {
 			return nil, fmt.Errorf("queue connection error: %v", err)
