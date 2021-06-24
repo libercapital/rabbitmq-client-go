@@ -7,9 +7,10 @@ type Event struct {
 	ID string `json:"id"`
 	// name of the object to suffer the event
 	Object string `json:"object"`
-	//  AccountID name of the account who send the message
-	AccountID string `json:"account_id"`
-	HasError  bool   `json:"has_error"`
+	//  Request ID received from API Gateway and used for tracing
+	RequestID string `json:"request_id"`
+	// flag error response
+	HasError bool `json:"has_error"`
 	// JSON body of the event
 	Properties interface{} `json:"properties"`
 }

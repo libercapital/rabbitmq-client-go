@@ -8,8 +8,9 @@ import (
 )
 
 type Client interface {
-	NewPublisher(args *models.QueueArgs) (Publisher, error)
+	NewPublisher(queueArgs *models.QueueArgs, exchangeArgs *models.ExchangeArgs) (Publisher, error)
 	NewConsumer(queueName string) (Consumer, error)
+	NewConsumerExchange(args *models.ExchangeArgs, routingKey string) (Consumer, error)
 }
 
 type clientImpl struct {
@@ -25,9 +26,9 @@ func New(credential models.Credential) (Client, error) {
 	return clientImpl{connection: conn}, nil
 }
 
-func (client clientImpl) NewPublisher(args *models.QueueArgs) (Publisher, error) {
-	if args == nil {
-		args = &models.QueueArgs{}
+func (client clientImpl) NewPublisher(queueArgs *models.QueueArgs, exchangeArgs *models.ExchangeArgs) (Publisher, error) {
+	if queueArgs == nil && exchangeArgs == nil {
+		return nil, fmt.Errorf("queueArgs and exchangeArgs should not both be nil")
 	}
 
 	channel, err := client.connection.Channel()
@@ -35,12 +36,21 @@ func (client clientImpl) NewPublisher(args *models.QueueArgs) (Publisher, error)
 		return nil, fmt.Errorf("channel connection error: %v", err)
 	}
 
-	queue, err := channel.QueueDeclare(args.Name, args.Durable, args.AutoDelete, args.Exclusive, args.NoWait, nil)
-	if err != nil {
-		return nil, fmt.Errorf("queue connection error: %v", err)
+	if queueArgs != nil {
+		queue, err := channel.QueueDeclare(queueArgs.Name, queueArgs.Durable, queueArgs.AutoDelete, queueArgs.Exclusive, queueArgs.NoWait, nil)
+		if err != nil {
+			return nil, fmt.Errorf("queue connection error: %v", err)
+		}
+		return publisherImpl{channel: channel, queue: &queue}, nil
+	} else {
+		err = channel.ExchangeDeclare(exchangeArgs.Name, exchangeArgs.Type, exchangeArgs.Durable, exchangeArgs.AutoDelete, exchangeArgs.Internal, exchangeArgs.NoWait, nil)
+		if err != nil {
+			return nil, fmt.Errorf("exchange connection error: %v", err)
+		}
+
+		return publisherImpl{channel: channel, queue: nil}, nil
 	}
 
-	return publisherImpl{channel: channel, queue: &queue}, nil
 }
 
 func (client clientImpl) NewConsumer(queueName string) (Consumer, error) {
@@ -50,4 +60,29 @@ func (client clientImpl) NewConsumer(queueName string) (Consumer, error) {
 	}
 
 	return consumerImpl{channel: channel, queueName: queueName}, nil
+}
+
+func (client clientImpl) NewConsumerExchange(args *models.ExchangeArgs, routingKey string) (Consumer, error) {
+	channel, err := client.connection.Channel()
+	if err != nil {
+		return nil, fmt.Errorf("channel connection error: %v", err)
+	}
+
+	err = channel.ExchangeDeclare(args.Name, args.Type, args.Durable, args.AutoDelete, args.Internal, args.NoWait, nil)
+	if err != nil {
+		return nil, fmt.Errorf("exchange connection error: %v", err)
+	}
+
+	err = channel.QueueBind(
+		"",
+		routingKey,
+		args.Name,
+		false,
+		nil)
+
+	if err != nil {
+		return nil, fmt.Errorf("queue connection error: %v", err)
+	}
+
+	return consumerImpl{channel: channel, queueName: ""}, nil
 }
