@@ -9,12 +9,14 @@ import (
 
 type Publisher interface {
 	GetQueueName() (*string, error)
+	GetExchangeName() (*string, error)
 	SendMessage(exchange string, routingKey string, mandatory bool, immediate bool, message models.PublishingMessage) error
 }
 
 type publisherImpl struct {
-	channel *amqp.Channel
-	queue   *amqp.Queue
+	channel      *amqp.Channel
+	queue        *amqp.Queue
+	exchangeName *string
 }
 
 func (publish publisherImpl) SendMessage(exchange string, routingKey string, mandatory bool, immediate bool, message models.PublishingMessage) error {
@@ -37,4 +39,12 @@ func (publish publisherImpl) GetQueueName() (*string, error) {
 	}
 
 	return &publish.queue.Name, nil
+}
+
+func (publish publisherImpl) GetExchangeName() (*string, error) {
+	if publish.exchangeName == nil {
+		return nil, fmt.Errorf("exchange name not defined")
+	}
+
+	return publish.exchangeName, nil
 }

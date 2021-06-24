@@ -2,7 +2,7 @@
 
 # Welcome to RabbitMQ client module 👋
 
-![Version](https://img.shields.io/badge/version-0.0.6-blue.svg?cacheSeconds=2592000)
+![Version](https://img.shields.io/badge/version-0.0.7-blue.svg?cacheSeconds=2592000)
 
 > Module to connect Bava's apps to RabbitMq Instance
 
@@ -111,8 +111,10 @@ message := rabbit_models.PublishingMessage{
 	Body: content,
 }
 
+exchangeName, _ := publisher.GetExchangeName()
+
 err := queue.SendMessage(
-  "exchange-name",//exchange
+  exchangeName,   //exchange
   routingKey,     //routing key
   false,          //mandatory
   false,          //imediate
