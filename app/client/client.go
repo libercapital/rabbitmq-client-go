@@ -48,7 +48,9 @@ func (client clientImpl) NewPublisher(queueArgs *models.QueueArgs, exchangeArgs 
 			return nil, fmt.Errorf("exchange connection error: %v", err)
 		}
 
-		return publisherImpl{channel: channel, queue: nil}, nil
+		exchangeName := exchangeArgs.Name
+
+		return publisherImpl{channel: channel, queue: nil, exchangeName: &exchangeName}, nil
 	}
 
 }
