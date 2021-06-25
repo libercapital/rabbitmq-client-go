@@ -3,9 +3,7 @@ package models
 type ConsumerEventHandler func(data IncomingEventMessage) bool
 
 type ConsumerEvent struct {
-	QueueName          string
-	Handler            ConsumerEventHandler
-	RetryMessagePeriod int
+	Handler ConsumerEventHandler
 	//Seconds to timeout consume event
 	Timeout int
 }
