@@ -7,7 +7,7 @@
 ## Install
 
 ```go
-go get gitlab.com/icredit/bava/architecture/software/libs/go-modules/rabbitmq-client.git
+go get gitlab.com/bavatech/architecture/software/libs/go-modules/rabbitmq-client.git
 ```
 
 ## Usage
