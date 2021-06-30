@@ -1,8 +1,6 @@
-
-
 # Welcome to RabbitMQ client module 👋
 
-![Version](https://img.shields.io/badge/version-0.0.8-blue.svg?cacheSeconds=2592000)
+![Version](https://img.shields.io/badge/version-0.0.9-blue.svg?cacheSeconds=2592000)
 
 > Module to connect Bava's apps to RabbitMq Instance
 
@@ -18,6 +16,7 @@ go get gitlab.com/icredit/bava/architecture/software/libs/go-modules/rabbitmq-cl
 > This module is based on the examples presented at www.rabbitmq.com
 
 > The following standards are implemented:
+>
 > - [Tutorial Rabbit MQ Go - Work Queues](https://www.rabbitmq.com/tutorials/tutorial-two-go.html)
 > - [Tutorial Rabbit MQ Go - Routing](https://www.rabbitmq.com/tutorials/tutorial-four-go.html)
 > - [Tutorial Rabbit MQ Go - Remote procedure call (RPC)](https://www.rabbitmq.com/tutorials/tutorial-six-go.html)
@@ -32,12 +31,14 @@ credential := rabbit_models.Credential{
   Vhost:    "vhost" //optional
 }
 
-client, err := rabbit_client.New(credential)
+delay := 1 //time in seconds to try to reconnect when the connection is broken
+client, err := rabbit_client.New(credential, delay)
 ```
 
 ### Simple queue publisher code
 
-Create new publisher 
+Create new publisher
+
 ```go
 publisher, err := client.NewPublisher(
   &rabbit_models.QueueArgs{
@@ -48,6 +49,7 @@ publisher, err := client.NewPublisher(
 ```
 
 Sending message
+
 ```go
 messageId := uuid.NewString()
 
@@ -78,7 +80,8 @@ err := queue.SendMessage(
 
 ### Simple routing key publisher code
 
-Create new publisher 
+Create new publisher
+
 ```go
 publisher, err := client.NewPublisher(
   nil,
@@ -94,6 +97,7 @@ publisher, err := client.NewPublisher(
 ```
 
 Sending message
+
 ```go
 messageId := uuid.NewString()
 
@@ -114,8 +118,8 @@ message := rabbit_models.PublishingMessage{
 exchangeName, _ := publisher.GetExchangeName()
 
 err := queue.SendMessage(
-  exchangeName,   //exchange
-  routingKey,     //routing key
+  exchangeName,
+  routingKey,
   false,          //mandatory
   false,          //imediate
   message         //message interface
@@ -125,7 +129,7 @@ err := queue.SendMessage(
 ### Simple RPC queue consumer code
 
 ```go
-consumer, err := client.NewConsumer("queue-name")
+consumer, err := client.NewConsumer(&rabbit_models.ConsumerArgs{QueueName: "queue-name"})
 
 event := rabbit_models.ConsumerEvent{
   Handler: func(message model.IncomingEventMessage) bool,
@@ -138,7 +142,7 @@ err = consumer.ReadMessage(ctx, correlationID, event)
 ### Simple queue consumer code
 
 ```go
-consumer, err := client.NewConsumer("queue-name")
+consumer, err := client.NewConsumer(&rabbit_models.ConsumerArgs{QueueName:"queue-name"})
 
 event := rabbit_models.ConsumerEvent{
   Handler:   func(message model.IncomingEventMessage) bool,
@@ -147,21 +151,22 @@ ctx := context.Background()
 err = consumer.SubscribeEvents(ctx, event)
 ```
 
-
 ### Simple routing key consumer code
 
 ```go
-consumer, err := client.NewConsumerExchange(
-  &rabbit_models.ExchangeArgs{
-    Name : "exchange-name",
-    Type : "direct",
-    Durable : false,
-    AutoDelete : false,
-    Internal : false,
-    NoWait : false,
-  },
-  "routing-key",
-  "queue-name",
+consumer, err := client.NewConsumer(
+  &rabbit_models.ConsumerArgs{
+    RoutingKey: "routing-key", //chave para roteamento no exchange
+    QueueName: "queue-name"
+    ExchangeArgs: &rabbit_models.ExchangeArgs{
+      Name : "exchange-name",
+      Type : "direct",
+      Durable : false,
+      AutoDelete : false,
+      Internal : false,
+      NoWait : false,
+    }
+  }
 )
 
 event := rabbit_models.ConsumerEvent{

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -18,8 +20,73 @@ type Consumer interface {
 }
 
 type consumerImpl struct {
-	queueName string
-	channel   *amqp.Channel
+	Args    models.ConsumerArgs
+	client  *clientImpl
+	channel *amqp.Channel
+	closed  int32
+}
+
+// IsClosed indicate closed by developer
+func (consumer *consumerImpl) IsClosed() bool {
+	return (atomic.LoadInt32(&consumer.closed) == 1)
+}
+
+// Close ensure closed flag set
+func (consumer *consumerImpl) Close() error {
+	if consumer.IsClosed() {
+		return amqp.ErrClosed
+	}
+
+	atomic.StoreInt32(&consumer.closed, 1)
+
+	return consumer.channel.Close()
+}
+
+func (consumer *consumerImpl) connect() error {
+	channel, err := consumer.client.connection.Channel()
+	if err != nil {
+		return fmt.Errorf("channel connection error: %v", err)
+	}
+	consumer.channel = channel
+
+	if consumer.Args.ExchangeArgs != nil {
+		args := consumer.Args.ExchangeArgs
+		if err := channel.ExchangeDeclare(args.Name, args.Type, args.Durable, args.AutoDelete, args.Internal, args.NoWait, nil); err != nil {
+			return fmt.Errorf("exchange connection error: %v", err)
+		}
+	}
+
+	if consumer.Args.RoutingKey != nil {
+		if err := channel.QueueBind("", *consumer.Args.RoutingKey, consumer.Args.ExchangeArgs.Name, false, nil); err != nil {
+			return fmt.Errorf("queue connection error: %v", err)
+		}
+	}
+
+	go func() {
+		for {
+			_, ok := <-channel.NotifyClose(make(chan *amqp.Error))
+			// exit this goroutine if closed by developer
+			if !ok || consumer.IsClosed() {
+				channel.Close() // close again, ensure closed flag set when connection closed
+				break
+			}
+
+			// reconnect if not closed by developer
+			for {
+				// wait time for connection reconnect
+				time.Sleep(time.Duration(consumer.client.reconnectionDelay) * time.Second)
+
+				ch, err := consumer.client.connection.Channel()
+				if err == nil {
+					consumer.channel = ch
+					break
+				}
+			}
+		}
+
+	}()
+
+	return nil
 }
 
 func (consumer consumerImpl) SubscribeEvents(ctx context.Context, consumerEvent models.ConsumerEvent) error {
@@ -37,7 +104,7 @@ func (consumer consumerImpl) getEvents(ctx context.Context, consumerEvent models
 		case <-ctx.Done():
 			return nil
 		default:
-			messages, err := consumer.channel.Consume(consumer.queueName, "", false, false, false, false, nil)
+			messages, err := consumer.channel.Consume(*consumer.Args.QueueName, "", false, false, false, false, nil)
 			if err != nil {
 				return err
 			}
@@ -71,7 +138,7 @@ func (consumer consumerImpl) ReadMessage(ctx context.Context, correlationID stri
 		timer = *time.NewTimer(time.Duration(consumerEvent.Timeout) * time.Second)
 	}
 
-	messages, err := consumer.channel.Consume(consumer.queueName, tag, false, false, false, false, nil)
+	messages, err := consumer.channel.Consume(*consumer.Args.QueueName, tag, false, false, false, false, nil)
 	if err != nil {
 		return err
 	}
