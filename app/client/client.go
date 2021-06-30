@@ -2,6 +2,8 @@ package client
 
 import (
 	"fmt"
+	"sync/atomic"
+	"time"
 
 	"github.com/streadway/amqp"
 	"gitlab.com/bavatech/architecture/software/libs/go-modules/rabbitmq-client.git/app/models"
@@ -9,95 +11,83 @@ import (
 
 type Client interface {
 	NewPublisher(queueArgs *models.QueueArgs, exchangeArgs *models.ExchangeArgs) (Publisher, error)
-	NewConsumer(queueName string) (Consumer, error)
-	NewConsumerExchange(args *models.ExchangeArgs, routingKey string, queueName string) (Consumer, error)
+	NewConsumer(args models.ConsumerArgs) (Consumer, error)
 }
 
 type clientImpl struct {
+	credential        models.Credential
+	reconnectionDelay int
+
 	connection *amqp.Connection
+	closed     int32
 }
 
-func New(credential models.Credential) (Client, error) {
-	conn, err := amqp.Dial(credential.GetConnectionString())
-	if err != nil {
-		return nil, fmt.Errorf("connection error: %v", err)
+// IsClosed indicate closed by developer
+func (client *clientImpl) IsClosed() bool {
+	return (atomic.LoadInt32(&client.closed) == 1)
+}
+
+// Close ensure closed flag set
+func (client *clientImpl) Close() error {
+	if client.IsClosed() {
+		return amqp.ErrClosed
 	}
 
-	return clientImpl{connection: conn}, nil
+	atomic.StoreInt32(&client.closed, 1)
+
+	return client.connection.Close()
 }
 
-func (client clientImpl) NewPublisher(queueArgs *models.QueueArgs, exchangeArgs *models.ExchangeArgs) (Publisher, error) {
+func (client *clientImpl) connect() error {
+	conn, err := amqp.Dial(client.credential.GetConnectionString())
+	if err != nil {
+		return err
+	}
+	client.connection = conn
+
+	go func() {
+		for {
+			_, ok := <-client.connection.NotifyClose(make(chan *amqp.Error))
+			// exit this goroutine if closed by developer
+			if !ok {
+				break
+			}
+
+			// reconnect if not closed by developer
+			for {
+				// wait time for connection reconnect
+				time.Sleep(time.Duration(client.reconnectionDelay) * time.Second)
+
+				conn, err := amqp.Dial(client.credential.GetConnectionString())
+				if err == nil {
+					client.connection = conn
+					break
+				}
+			}
+		}
+	}()
+
+	return nil
+}
+
+func New(credential models.Credential, reconnectionDelay int) Client {
+	client := &clientImpl{credential: credential, reconnectionDelay: reconnectionDelay}
+	client.connect()
+	return client
+}
+
+func (client *clientImpl) NewPublisher(queueArgs *models.QueueArgs, exchangeArgs *models.ExchangeArgs) (Publisher, error) {
 	if queueArgs == nil && exchangeArgs == nil {
 		return nil, fmt.Errorf("queueArgs and exchangeArgs should not both be nil")
 	}
 
-	channel, err := client.connection.Channel()
-	if err != nil {
-		return nil, fmt.Errorf("channel connection error: %v", err)
-	}
-
-	if queueArgs != nil {
-		queue, err := channel.QueueDeclare(queueArgs.Name, queueArgs.Durable, queueArgs.AutoDelete, queueArgs.Exclusive, queueArgs.NoWait, nil)
-		if err != nil {
-			return nil, fmt.Errorf("queue connection error: %v", err)
-		}
-		return publisherImpl{channel: channel, queue: &queue}, nil
-	} else {
-		err = channel.ExchangeDeclare(exchangeArgs.Name, exchangeArgs.Type, exchangeArgs.Durable, exchangeArgs.AutoDelete, exchangeArgs.Internal, exchangeArgs.NoWait, nil)
-		if err != nil {
-			return nil, fmt.Errorf("exchange connection error: %v", err)
-		}
-
-		exchangeName := exchangeArgs.Name
-
-		return publisherImpl{channel: channel, queue: nil, exchangeName: &exchangeName}, nil
-	}
-
+	publish := publisherImpl{queueArgs: queueArgs, exchangeArgs: exchangeArgs, client: client}
+	err := publish.connect()
+	return &publish, err
 }
 
-func (client clientImpl) NewConsumer(queueName string) (Consumer, error) {
-	channel, err := client.connection.Channel()
-	if err != nil {
-		return nil, fmt.Errorf("channel connection error: %v", err)
-	}
-
-	return consumerImpl{channel: channel, queueName: queueName}, nil
-}
-
-func (client clientImpl) NewConsumerExchange(args *models.ExchangeArgs, routingKey string, queueName string) (Consumer, error) {
-	channel, err := client.connection.Channel()
-	if err != nil {
-		return nil, fmt.Errorf("channel connection error: %v", err)
-	}
-
-	err = channel.ExchangeDeclare(args.Name, args.Type, args.Durable, args.AutoDelete, args.Internal, args.NoWait, nil)
-	if err != nil {
-		return nil, fmt.Errorf("exchange connection error: %v", err)
-	}
-
-	_, err = channel.QueueDeclare(
-		queueName, // name
-		false,     // durable
-		false,     // delete when unused
-		false,     // exclusive
-		false,     // no-wait
-		nil,       // arguments
-	)
-
-	if err != nil {
-		return nil, fmt.Errorf("queue connection error: %v", err)
-	}
-
-	err = channel.QueueBind(
-		queueName,
-		routingKey,
-		args.Name,
-		false,
-		nil)
-
-	if err != nil {
-		return nil, fmt.Errorf("queue connection error: %v", err)
-	}
-
-	return consumerImpl{channel: channel, queueName: queueName}, nil
+func (client *clientImpl) NewConsumer(args models.ConsumerArgs) (Consumer, error) {
+	consumer := consumerImpl{Args: args, client: client}
+	err := consumer.connect()
+	return &consumer, err
 }
