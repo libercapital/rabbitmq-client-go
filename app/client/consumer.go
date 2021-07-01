@@ -52,13 +52,15 @@ func (consumer *consumerImpl) connect() error {
 	if consumer.Args.ExchangeArgs != nil {
 		args := consumer.Args.ExchangeArgs
 		if err := channel.ExchangeDeclare(args.Name, args.Type, args.Durable, args.AutoDelete, args.Internal, args.NoWait, nil); err != nil {
-			return fmt.Errorf("exchange connection error: %v", err)
+			return fmt.Errorf("exchange declare connection error: %v", err)
 		}
-	}
 
-	if consumer.Args.RoutingKey != nil {
-		if err := channel.QueueBind("", *consumer.Args.RoutingKey, consumer.Args.ExchangeArgs.Name, false, nil); err != nil {
-			return fmt.Errorf("queue connection error: %v", err)
+		if _, err := channel.QueueDeclare(*consumer.Args.QueueName, false, false, false, false, nil); err != nil {
+			return fmt.Errorf("exchange queue declare connection error: %v", err)
+		}
+
+		if err := channel.QueueBind(*consumer.Args.QueueName, *consumer.Args.RoutingKey, consumer.Args.ExchangeArgs.Name, false, nil); err != nil {
+			return fmt.Errorf("exchange queue bind connection error: %v", err)
 		}
 	}
 
