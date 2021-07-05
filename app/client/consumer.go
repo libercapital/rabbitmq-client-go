@@ -15,7 +15,7 @@ import (
 )
 
 type Consumer interface {
-	SubscribeEvents(ctx context.Context, consumerEvent models.ConsumerEvent) error
+	SubscribeEvents(ctx context.Context, consumerEvent models.ConsumerEvent, concurrency int) error
 	ReadMessage(ctx context.Context, correlationID string, consumerEvent models.ConsumerEvent) error
 }
 
@@ -48,8 +48,6 @@ func (consumer *consumerImpl) connect() error {
 		return fmt.Errorf("channel connection error: %v", err)
 	}
 	consumer.channel = channel
-
-	channel.Qos(50, 0, false)
 
 	if consumer.Args.ExchangeArgs != nil {
 		args := consumer.Args.ExchangeArgs
@@ -93,48 +91,54 @@ func (consumer *consumerImpl) connect() error {
 	return nil
 }
 
-func (consumer consumerImpl) SubscribeEvents(ctx context.Context, consumerEvent models.ConsumerEvent) error {
+func (consumer consumerImpl) SubscribeEvents(ctx context.Context, consumerEvent models.ConsumerEvent, concurrency int) error {
+	prefetchCount := concurrency * 5
+	err := consumer.channel.Qos(prefetchCount, 0, false)
+	if err != nil {
+		return err
+	}
+
+	messages, err := consumer.channel.Consume(*consumer.Args.QueueName, "", false, false, false, false, nil)
+	if err != nil {
+		return err
+	}
+
 	errs, errCtx := errgroup.WithContext(ctx)
-	errs.Go(func() error {
-		return consumer.getEvents(errCtx, consumerEvent)
-	})
+
+	for i := 0; i < concurrency; i++ {
+		fmt.Printf("Processing messages on thread %v...\n", i)
+		errs.Go(func() error {
+			for {
+				select {
+				case <-errCtx.Done():
+					return nil
+				default:
+					for message := range messages {
+						var body []byte
+						if message.Body != nil {
+							body = message.Body
+						}
+						var event models.IncomingEventMessage
+						if err := json.Unmarshal(body, &event); err != nil {
+							message.Nack(false, false) //To move to dlq we need to send a Nack with requeue = false
+							continue
+						}
+
+						// if tha handler returns true then ACK, else NACK
+						// the message back into the rabbit queue for
+						// another round of processing
+						if consumerEvent.Handler(event) {
+							message.Ack(false)
+						} else {
+							message.Nack(false, true)
+						}
+					}
+				}
+			}
+		})
+	}
 
 	return errs.Wait()
-}
-
-func (consumer consumerImpl) getEvents(ctx context.Context, consumerEvent models.ConsumerEvent) error {
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		default:
-			messages, err := consumer.channel.Consume(*consumer.Args.QueueName, "", false, false, false, false, nil)
-			if err != nil {
-				return err
-			}
-
-			for message := range messages {
-				var body []byte
-				if message.Body != nil {
-					body = message.Body
-				}
-				var event models.IncomingEventMessage
-				if err := json.Unmarshal(body, &event); err != nil {
-					message.Nack(false, false) //To move to dlq we need to send a Nack with requeue = false
-					continue
-				}
-
-				go func(messageParam amqp.Delivery) {
-					success := consumerEvent.Handler(event)
-					if success {
-						messageParam.Ack(true)
-					} else {
-						messageParam.Nack(false, false) //To move to dlq we need to send a Nack with requeue = false
-					}
-				}(message)
-			}
-		}
-	}
 }
 
 func (consumer consumerImpl) ReadMessage(ctx context.Context, correlationID string, consumerEvent models.ConsumerEvent) error {
