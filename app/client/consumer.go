@@ -49,6 +49,8 @@ func (consumer *consumerImpl) connect() error {
 	}
 	consumer.channel = channel
 
+	channel.Qos(50, 0, false)
+
 	if consumer.Args.ExchangeArgs != nil {
 		args := consumer.Args.ExchangeArgs
 		if err := channel.ExchangeDeclare(args.Name, args.Type, args.Durable, args.AutoDelete, args.Internal, args.NoWait, nil); err != nil {
@@ -122,12 +124,14 @@ func (consumer consumerImpl) getEvents(ctx context.Context, consumerEvent models
 					continue
 				}
 
-				success := consumerEvent.Handler(event)
-				if success {
-					message.Ack(true)
-				} else {
-					message.Nack(false, false) //To move to dlq we need to send a Nack with requeue = false
-				}
+				go func(messageParam amqp.Delivery) {
+					success := consumerEvent.Handler(event)
+					if success {
+						messageParam.Ack(true)
+					} else {
+						messageParam.Nack(false, false) //To move to dlq we need to send a Nack with requeue = false
+					}
+				}(message)
 			}
 		}
 	}
