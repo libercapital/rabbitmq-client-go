@@ -1,6 +1,6 @@
 # Welcome to RabbitMQ client module 👋
 
-![Version](https://img.shields.io/badge/version-0.0.9-blue.svg?cacheSeconds=2592000)
+![Version](https://img.shields.io/badge/version-0.0.11-blue.svg?cacheSeconds=2592000)
 
 > Module to connect Bava's apps to RabbitMq Instance
 
@@ -148,7 +148,7 @@ event := rabbit_models.ConsumerEvent{
   Handler:   func(message model.IncomingEventMessage) bool,
 }
 ctx := context.Background()
-err = consumer.SubscribeEvents(ctx, event)
+err = consumer.SubscribeEvents(ctx, event, 10) // 10 threads
 ```
 
 ### Simple routing key consumer code
@@ -173,7 +173,7 @@ event := rabbit_models.ConsumerEvent{
   Handler:   func(message model.IncomingEventMessage) bool,
 }
 ctx := context.Background()
-err = consumer.SubscribeEvents(ctx, event)
+err = consumer.SubscribeEvents(ctx, event, 5) //5 threads
 ```
 
 ## Author
