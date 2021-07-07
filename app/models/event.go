@@ -1,6 +1,9 @@
 package models
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"time"
+)
 
 type Event struct {
 	// unique id of the call
@@ -11,6 +14,10 @@ type Event struct {
 	RequestID string `json:"request_id"`
 	// flag error response
 	HasError bool `json:"has_error"`
+	// readed message time
+	ReadedTime time.Time `json:"-"`
+	// created message time
+	CreatedTime string `json:"created_time"`
 	// JSON body of the event
 	Properties interface{} `json:"properties"`
 }
