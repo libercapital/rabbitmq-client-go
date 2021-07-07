@@ -162,25 +162,26 @@ func (consumer consumerImpl) ReadMessage(ctx context.Context, correlationID stri
 		case <-timer.C:
 			return errors.New("consumer timeout reached")
 		case message := <-messages:
-			var body []byte
-			if message.Body != nil {
-				body = message.Body
-			}
-			var event models.IncomingEventMessage
-			if err := json.Unmarshal(body, &event); err != nil {
-				message.Nack(false, false) //To move to dlq we need to send a Nack with requeue = false
-				continue
-			}
-
 			if message.CorrelationId == correlationID {
+				var body []byte
+				if message.Body != nil {
+					body = message.Body
+				}
+				var event models.IncomingEventMessage
+				if err := json.Unmarshal(body, &event); err != nil {
+					message.Nack(false, false) //To move to dlq we need to send a Nack with requeue = false
+					return err
+				}
+
 				success := consumerEvent.Handler(event)
 
 				if success {
 					message.Ack(true)
-					return nil
 				} else {
-					message.Nack(false, true) //Requeue true because we are searching by specif message
+					message.Nack(false, false) //Move to dlq
 				}
+
+				return nil
 			} else {
 				message.Nack(false, true) //Requeue true because we are searching by specif message
 			}
