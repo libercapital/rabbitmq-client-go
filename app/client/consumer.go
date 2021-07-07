@@ -49,6 +49,12 @@ func (consumer *consumerImpl) connect() error {
 	}
 	consumer.channel = channel
 
+	if consumer.Args.PrefetchCount != nil {
+		if err := consumer.channel.Qos(*consumer.Args.PrefetchCount, 0, false); err != nil {
+			return fmt.Errorf("prefetch count setting error: %v", err)
+		}
+	}
+
 	if consumer.Args.ExchangeArgs != nil {
 		args := consumer.Args.ExchangeArgs
 		if err := channel.ExchangeDeclare(args.Name, args.Type, args.Durable, args.AutoDelete, args.Internal, args.NoWait, nil); err != nil {
@@ -92,12 +98,6 @@ func (consumer *consumerImpl) connect() error {
 }
 
 func (consumer consumerImpl) SubscribeEvents(ctx context.Context, consumerEvent models.ConsumerEvent, concurrency int) error {
-	prefetchCount := concurrency * 5
-	err := consumer.channel.Qos(prefetchCount, 0, false)
-	if err != nil {
-		return err
-	}
-
 	messages, err := consumer.channel.Consume(*consumer.Args.QueueName, "", false, false, false, false, nil)
 	if err != nil {
 		return err
