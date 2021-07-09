@@ -18,6 +18,8 @@ type Event struct {
 	ReadedTime time.Time `json:"-"`
 	// created message time
 	CreatedTime string `json:"created_time"`
+	// used to address message
+	ReplyTo string
 	// JSON body of the event
 	Properties interface{} `json:"properties"`
 }

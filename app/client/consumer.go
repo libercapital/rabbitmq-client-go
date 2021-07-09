@@ -124,6 +124,8 @@ func (consumer consumerImpl) SubscribeEvents(ctx context.Context, consumerEvent 
 							continue
 						}
 
+						event.Content.ReplyTo = message.ReplyTo
+
 						// if tha handler returns true then ACK, else NACK
 						// the message back into the rabbit queue for
 						// another round of processing
