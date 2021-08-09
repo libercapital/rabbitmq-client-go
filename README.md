@@ -24,11 +24,14 @@ go get gitlab.com/bavatech/architecture/software/libs/go-modules/rabbitmq-client
 ### Create a RabbitMQ connection
 
 ```go
+var vhost = "vhost"
+
 credential := rabbit_models.Credential{
   Host:     "host",
   User:     "user",
   Password: "password",
-  Vhost:    "vhost" //optional
+  Vhost:    &vhost //optional default User as vhost,
+  Protocol: rabbit_models.AMQPS //optional default AMQPS
 }
 
 delay := 1 //time in seconds to try to reconnect when the connection is broken
@@ -52,6 +55,14 @@ Sending message
 
 ```go
 messageId := uuid.NewString()
+
+type BodyMessage struct {
+  Value string `json:"value"`
+}
+
+jsonBodyMessage := BodyMessage{
+  Value: "value",
+}
 
 bodyMessage := rabbit_models.IncomingEventMessage{
   Source: constants.ApplicationName,
