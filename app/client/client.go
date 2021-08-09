@@ -72,7 +72,11 @@ func (client *clientImpl) connect() error {
 
 func New(credential models.Credential, reconnectionDelay int) Client {
 	client := &clientImpl{credential: credential, reconnectionDelay: reconnectionDelay}
-	client.connect()
+	err := client.connect()
+	if err != nil {
+		fmt.Println(err)
+		panic(err)
+	}
 	return client
 }
 
