@@ -2,17 +2,24 @@ package models
 
 import "fmt"
 
+type AmqpProtocol = string
+
+const (
+	AMQP  AmqpProtocol = "amqp"
+	AMQPS AmqpProtocol = "amqps"
+)
+
 type Credential struct {
 	Host     string
 	User     string
 	Password string
 	Vhost    *string
-	Protocol string
+	Protocol AmqpProtocol
 }
 
 func (credential Credential) GetConnectionString() string {
 	if credential.Protocol == "" {
-		credential.Protocol = "amqps"
+		credential.Protocol = AMQPS
 	}
 
 	var vhost string
