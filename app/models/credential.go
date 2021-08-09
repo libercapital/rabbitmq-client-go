@@ -25,8 +25,6 @@ func (credential Credential) GetConnectionString() string {
 	var vhost string
 	if credential.Vhost == nil {
 		vhost = credential.User
-	} else if *credential.Vhost == "all" {
-		vhost = ""
 	} else {
 		vhost = *credential.Vhost
 	}
