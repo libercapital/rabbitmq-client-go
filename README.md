@@ -1,6 +1,6 @@
 # Welcome to RabbitMQ client module 👋
 
-![Version](https://img.shields.io/badge/version-0.0.16-blue.svg?cacheSeconds=2592000)
+![Version](https://img.shields.io/badge/version-0.0.17-blue.svg?cacheSeconds=2592000)
 
 > Module to connect Bava's apps to RabbitMq Instance
 
@@ -162,7 +162,7 @@ ctx := context.Background()
 err = consumer.SubscribeEvents(ctx, event, 10) // 10 threads
 ```
 
-### Simple queue consumer code - using DLQ and TTL of 30 seconds
+### Simple queue consumer code - using DLQ and TTL of 30 seconds and Redelivery true
 
 ```go
 consumer, err := client.NewConsumer(
@@ -170,6 +170,7 @@ consumer, err := client.NewConsumer(
     QueueName: "queue-name",
     TimeToLive: 30000,
     DeadLetterName: "dlq-queue-name",
+    Redelivery: true, // try again once
   }
 )
 

@@ -134,12 +134,13 @@ func (consumer consumerImpl) SubscribeEvents(ctx context.Context, consumerEvent 
 						event.Content.ReplyTo = message.ReplyTo
 
 						// if tha handler returns true then ACK, else NACK
-						// the message back into the rabbit queue for
-						// another round of processing
+						// the message back into the rabbit queue for another round of processing
 						if consumerEvent.Handler(event) {
 							message.Ack(false)
-						} else {
+						} else if consumer.Args.Redelivery && !message.Redelivered {
 							message.Nack(false, true)
+						} else {
+							message.Nack(false, false)
 						}
 					}
 				}
@@ -185,7 +186,7 @@ func (consumer consumerImpl) ReadMessage(ctx context.Context, correlationID stri
 				success := consumerEvent.Handler(event)
 
 				if success {
-					message.Ack(true)
+					message.Ack(false)
 				} else {
 					message.Nack(false, false) //Move to dlq
 				}
@@ -205,11 +206,11 @@ func (consumer consumerImpl) buildQueueParameters() amqp.Table {
 
 	args := make(amqp.Table)
 	if consumer.Args.DeadLetterName != nil {
-		args["x-dead-letter-exchange"] = models.DeadLetterExchangeName // consumer.Args.DeadLetterName
+		args["x-dead-letter-exchange"] = models.DeadLetterExchangeName
 		args["x-dead-letter-routing-key"] = *consumer.Args.QueueName
 	}
-	if consumer.Args.TimeToLive == nil {
-		args["x-message-ttl"] = consumer.Args.TimeToLive
+	if consumer.Args.TimeToLive != nil {
+		args["x-message-ttl"] = *consumer.Args.TimeToLive
 	}
 
 	return args
@@ -217,11 +218,11 @@ func (consumer consumerImpl) buildQueueParameters() amqp.Table {
 
 func (consumer consumerImpl) buildDeadLetterQueue() error {
 	if consumer.Args.DeadLetterName != nil {
-		if err := consumer.channel.ExchangeDeclare(models.DeadLetterExchangeName, "", true, false, false, false, nil); err != nil {
+		if err := consumer.channel.ExchangeDeclare(models.DeadLetterExchangeName, "direct", true, false, false, false, nil); err != nil {
 			return fmt.Errorf("dead letter exchange declare connection error: %v", err)
 		}
 
-		if _, err := consumer.channel.QueueDeclare(*consumer.Args.QueueName, false, false, false, false, nil); err != nil {
+		if _, err := consumer.channel.QueueDeclare(*consumer.Args.DeadLetterName, true, false, false, false, nil); err != nil {
 			return fmt.Errorf("dead letter queue declare connection error: %v", err)
 		}
 
