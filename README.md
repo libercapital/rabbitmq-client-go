@@ -162,7 +162,7 @@ ctx := context.Background()
 err = consumer.SubscribeEvents(ctx, event, 10) // 10 threads
 ```
 
-### Simple queue consumer code - using DLQ and TTL of 30 seconds
+### Simple queue consumer code - using DLQ and TTL of 30 seconds and Redelivery true
 
 ```go
 consumer, err := client.NewConsumer(
@@ -170,6 +170,7 @@ consumer, err := client.NewConsumer(
     QueueName: "queue-name",
     TimeToLive: 30000,
     DeadLetterName: "dlq-queue-name",
+    Redelivery: true, // try again once
   }
 )
 
