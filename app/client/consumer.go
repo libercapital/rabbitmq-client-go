@@ -67,7 +67,7 @@ func (consumer *consumerImpl) connect() error {
 	}
 
 	parameters := consumer.buildQueueParameters()
-	if _, err := channel.QueueDeclare(*consumer.Args.QueueName, false, false, false, false, parameters); err != nil {
+	if _, err := channel.QueueDeclare(*consumer.Args.QueueName, consumer.Args.Durable, false, false, false, parameters); err != nil {
 		return fmt.Errorf("exchange queue declare connection error: %v", err)
 	}
 

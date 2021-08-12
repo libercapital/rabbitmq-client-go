@@ -1,6 +1,6 @@
 # Welcome to RabbitMQ client module 👋
 
-![Version](https://img.shields.io/badge/version-0.0.17-blue.svg?cacheSeconds=2592000)
+![Version](https://img.shields.io/badge/version-0.0.18-blue.svg?cacheSeconds=2592000)
 
 > Module to connect Bava's apps to RabbitMq Instance
 
