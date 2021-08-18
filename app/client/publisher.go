@@ -49,14 +49,15 @@ func (publish *publisherImpl) connect() error {
 	}
 	publish.channel = channel
 
-	queueArgs := publish.queueArgs
-	if queueArgs != nil {
+	if publish.queueArgs != nil {
+		queueArgs := publish.queueArgs
 		queue, err := channel.QueueDeclare(queueArgs.Name, queueArgs.Durable, queueArgs.AutoDelete, queueArgs.Exclusive, queueArgs.NoWait, nil)
 		if err != nil {
 			return fmt.Errorf("queue connection error: %v", err)
 		}
 		publish.queue = &queue
-	} else {
+	}
+	if publish.exchangeArgs != nil {
 		exchangeArgs := publish.exchangeArgs
 		err = channel.ExchangeDeclare(exchangeArgs.Name, exchangeArgs.Type, exchangeArgs.Durable, exchangeArgs.AutoDelete, exchangeArgs.Internal, exchangeArgs.NoWait, nil)
 		if err != nil {
