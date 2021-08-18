@@ -12,6 +12,7 @@ import (
 type Client interface {
 	NewPublisher(queueArgs *models.QueueArgs, exchangeArgs *models.ExchangeArgs) (Publisher, error)
 	NewConsumer(args models.ConsumerArgs) (Consumer, error)
+	GetConnection() *amqp.Connection
 }
 
 type clientImpl struct {
@@ -81,10 +82,6 @@ func New(credential models.Credential, reconnectionDelay int) Client {
 }
 
 func (client *clientImpl) NewPublisher(queueArgs *models.QueueArgs, exchangeArgs *models.ExchangeArgs) (Publisher, error) {
-	if queueArgs == nil && exchangeArgs == nil {
-		return nil, fmt.Errorf("queueArgs and exchangeArgs should not both be nil")
-	}
-
 	publish := publisherImpl{queueArgs: queueArgs, exchangeArgs: exchangeArgs, client: client}
 	err := publish.connect()
 	return &publish, err
@@ -94,4 +91,8 @@ func (client *clientImpl) NewConsumer(args models.ConsumerArgs) (Consumer, error
 	consumer := consumerImpl{Args: args, client: client}
 	err := consumer.connect()
 	return &consumer, err
+}
+
+func (client *clientImpl) GetConnection() *amqp.Connection {
+	return client.connection
 }

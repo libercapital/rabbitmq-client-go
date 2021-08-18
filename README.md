@@ -1,6 +1,6 @@
 # Welcome to RabbitMQ client module 👋
 
-![Version](https://img.shields.io/badge/version-0.0.18-blue.svg?cacheSeconds=2592000)
+![Version](https://img.shields.io/badge/version-0.0.19-blue.svg?cacheSeconds=2592000)
 
 > Module to connect Bava's apps to RabbitMq Instance
 
@@ -36,6 +36,9 @@ credential := rabbit_models.Credential{
 
 delay := 1 //time in seconds to try to reconnect when the connection is broken
 client, err := rabbit_client.New(credential, delay)
+
+// if needed, the connection for the ampq its shared by the function GetConnection
+amqpConnection := client.GetConnection()
 ```
 
 ### Simple queue publisher code
