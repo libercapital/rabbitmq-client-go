@@ -1,7 +1,6 @@
 package client
 
 import (
-	"fmt"
 	"sync/atomic"
 	"time"
 
@@ -71,14 +70,13 @@ func (client *clientImpl) connect() error {
 	return nil
 }
 
-func New(credential models.Credential, reconnectionDelay int) Client {
+func New(credential models.Credential, reconnectionDelay int) (Client, error) {
 	client := &clientImpl{credential: credential, reconnectionDelay: reconnectionDelay}
 	err := client.connect()
 	if err != nil {
-		fmt.Println(err)
-		panic(err)
+		return nil, err
 	}
-	return client
+	return client, nil
 }
 
 func (client *clientImpl) NewPublisher(queueArgs *models.QueueArgs, exchangeArgs *models.ExchangeArgs) (Publisher, error) {
