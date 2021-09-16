@@ -11,7 +11,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/streadway/amqp"
 	"gitlab.com/bavatech/architecture/software/libs/go-modules/rabbitmq-client.git/app/models"
-	"golang.org/x/sync/errgroup"
 )
 
 type Consumer interface {
@@ -110,46 +109,37 @@ func (consumer consumerImpl) SubscribeEvents(ctx context.Context, consumerEvent 
 		return err
 	}
 
-	errs, errCtx := errgroup.WithContext(ctx)
-
 	for i := 0; i < concurrency; i++ {
 		fmt.Printf("Processing messages on thread %v...\n", i)
-		errs.Go(func() error {
-			for {
-				select {
-				case <-errCtx.Done():
-					return nil
-				default:
-					for message := range messages {
-						var body []byte
-						if message.Body != nil {
-							body = message.Body
-						}
-						var event models.IncomingEventMessage
-						if err := json.Unmarshal(body, &event); err != nil {
-							message.Nack(false, false) //To move to dlq we need to send a Nack with requeue = false
-							continue
-						}
+		go func() {
+			for message := range messages {
+				var body []byte
+				if message.Body != nil {
+					body = message.Body
+				}
+				var event models.IncomingEventMessage
+				if err := json.Unmarshal(body, &event); err != nil {
+					message.Nack(false, false) //To move to dlq we need to send a Nack with requeue = false
+					continue
+				}
 
-						event.Content.ReplyTo = message.ReplyTo
-						event.CorrelationID = message.CorrelationId
+				event.Content.ReplyTo = message.ReplyTo
+				event.CorrelationID = message.CorrelationId
 
-						// if tha handler returns true then ACK, else NACK
-						// the message back into the rabbit queue for another round of processing
-						if consumerEvent.Handler(event) {
-							message.Ack(false)
-						} else if consumer.Args.Redelivery && !message.Redelivered {
-							message.Nack(false, true)
-						} else {
-							message.Nack(false, false)
-						}
-					}
+				// if tha handler returns true then ACK, else NACK
+				// the message back into the rabbit queue for another round of processing
+				if consumerEvent.Handler(event) {
+					message.Ack(false)
+				} else if consumer.Args.Redelivery && !message.Redelivered {
+					message.Nack(false, true)
+				} else {
+					message.Nack(false, false)
 				}
 			}
-		})
+		}()
 	}
 
-	return errs.Wait()
+	return nil
 }
 
 func (consumer consumerImpl) ReadMessage(ctx context.Context, correlationID string, consumerEvent models.ConsumerEvent) error {
