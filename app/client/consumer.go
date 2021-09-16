@@ -109,6 +109,11 @@ func (consumer consumerImpl) SubscribeEvents(ctx context.Context, consumerEvent 
 		return err
 	}
 
+	go func() {
+		<-ctx.Done()
+		consumer.channel.Close()
+	}()
+
 	for i := 0; i < concurrency; i++ {
 		fmt.Printf("Processing messages on thread %v...\n", i)
 		go func() {
