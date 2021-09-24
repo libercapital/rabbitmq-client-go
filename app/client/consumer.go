@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
 	"github.com/streadway/amqp"
 	"gitlab.com/bavatech/architecture/software/libs/go-modules/rabbitmq-client.git/app/models"
 )
@@ -112,18 +113,33 @@ func (consumer consumerImpl) SubscribeEvents(ctx context.Context, consumerEvent 
 	go func() {
 		<-ctx.Done()
 		consumer.channel.Close()
+		log.Info().Interface("queue", consumer.Args.QueueName).Msg("Consumer channel has been closed")
 	}()
 
 	for i := 0; i < concurrency; i++ {
-		fmt.Printf("Processing messages on thread %v...\n", i)
+		log.Info().Interface("queue", consumer.Args.QueueName).Msgf("Processing messages on thread %v", i)
 		go func() {
 			for message := range messages {
+				log.Info().
+					Interface("message_id", message.MessageId).
+					Interface("corr_id", message.CorrelationId).
+					Interface("queue", consumer.Args.QueueName).
+					Msg("Received amqp message")
+
 				var body []byte
 				if message.Body != nil {
 					body = message.Body
 				}
+
 				var event models.IncomingEventMessage
 				if err := json.Unmarshal(body, &event); err != nil {
+					log.Error().
+						Err(err).
+						Interface("message_id", message.MessageId).
+						Interface("corr_id", message.CorrelationId).
+						Interface("queue", consumer.Args.QueueName).
+						Msg("Failed to unmarshal incoming event message, sending message do dlq")
+
 					message.Nack(false, false) //To move to dlq we need to send a Nack with requeue = false
 					continue
 				}
