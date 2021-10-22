@@ -105,14 +105,19 @@ func (consumer *consumerImpl) connect() error {
 }
 
 func (consumer consumerImpl) SubscribeEvents(ctx context.Context, consumerEvent models.ConsumerEvent, concurrency int) error {
-	messages, err := consumer.channel.Consume(*consumer.Args.QueueName, "", false, false, false, false, nil)
+	channel, err := consumer.client.connection.Channel()
+	if err != nil {
+		return err
+	}
+
+	messages, err := channel.Consume(*consumer.Args.QueueName, "", false, false, false, false, nil)
 	if err != nil {
 		return err
 	}
 
 	go func() {
 		<-ctx.Done()
-		consumer.channel.Close()
+		channel.Close()
 		log.Info().Interface("queue", consumer.Args.QueueName).Msg("Consumer channel has been closed")
 	}()
 
@@ -121,7 +126,6 @@ func (consumer consumerImpl) SubscribeEvents(ctx context.Context, consumerEvent 
 		go func() {
 			for message := range messages {
 				log.Info().
-					Interface("message_id", message.MessageId).
 					Interface("corr_id", message.CorrelationId).
 					Interface("queue", consumer.Args.QueueName).
 					Msg("Received amqp message")
@@ -135,7 +139,6 @@ func (consumer consumerImpl) SubscribeEvents(ctx context.Context, consumerEvent 
 				if err := json.Unmarshal(body, &event); err != nil {
 					log.Error().
 						Err(err).
-						Interface("message_id", message.MessageId).
 						Interface("corr_id", message.CorrelationId).
 						Interface("queue", consumer.Args.QueueName).
 						Msg("Failed to unmarshal incoming event message, sending message do dlq")
