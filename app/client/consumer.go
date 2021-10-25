@@ -125,11 +125,6 @@ func (consumer consumerImpl) SubscribeEvents(ctx context.Context, consumerEvent 
 		log.Info().Interface("queue", consumer.Args.QueueName).Msgf("Processing messages on thread %v", i)
 		go func() {
 			for message := range messages {
-				log.Info().
-					Interface("corr_id", message.CorrelationId).
-					Interface("queue", consumer.Args.QueueName).
-					Msg("Received amqp message")
-
 				var body []byte
 				if message.Body != nil {
 					body = message.Body
@@ -149,6 +144,12 @@ func (consumer consumerImpl) SubscribeEvents(ctx context.Context, consumerEvent 
 
 				event.Content.ReplyTo = message.ReplyTo
 				event.CorrelationID = message.CorrelationId
+
+				log.Info().
+					Interface("id", event.Content.ID).
+					Interface("corr_id", message.CorrelationId).
+					Interface("queue", consumer.Args.QueueName).
+					Msg("Received AMQP message")
 
 				// if tha handler returns true then ACK, else NACK
 				// the message back into the rabbit queue for another round of processing
