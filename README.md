@@ -1,6 +1,6 @@
 # Welcome to RabbitMQ client module 👋
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue.svg?cacheSeconds=2592000)
+![Version](https://img.shields.io/badge/version-1.0.1-blue.svg?cacheSeconds=2592000)
 
 > Module to connect Bava's apps to RabbitMq Instance
 
@@ -220,6 +220,10 @@ err = consumer.SubscribeEvents(ctx, event, 5) //5 threads
 👤 **Vinícius Deuner**
 
 - Gitlab: [@vinicius.deuner@bavabank.com](https://gitlab.com/vinicius.deuner)
+
+👤 **Giuseppe Menti**
+
+- Gitlab: [@giuseppe.menti@bavabank.com](https://gitlab.com/giuseppe.menti)
 
 ## Show your support
 
