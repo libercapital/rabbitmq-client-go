@@ -17,6 +17,7 @@ import (
 type Consumer interface {
 	SubscribeEvents(ctx context.Context, consumerEvent models.ConsumerEvent, concurrency int) error
 	ReadMessage(ctx context.Context, correlationID string, consumerEvent models.ConsumerEvent) error
+	GetQueue() amqp.Queue
 }
 
 type consumerImpl struct {
@@ -24,6 +25,7 @@ type consumerImpl struct {
 	client  *clientImpl
 	channel *amqp.Channel
 	closed  int32
+	queue   amqp.Queue
 }
 
 // IsClosed indicate closed by developer
@@ -67,8 +69,10 @@ func (consumer *consumerImpl) connect() error {
 	}
 
 	parameters := consumer.buildQueueParameters()
-	if _, err := channel.QueueDeclare(*consumer.Args.QueueName, consumer.Args.Durable, false, false, false, parameters); err != nil {
+	if queue, err := channel.QueueDeclare(*consumer.Args.QueueName, consumer.Args.Durable, false, false, false, parameters); err != nil {
 		return fmt.Errorf("exchange queue declare connection error: %v", err)
+	} else {
+		consumer.queue = queue
 	}
 
 	if consumer.Args.ExchangeArgs != nil {
@@ -105,12 +109,19 @@ func (consumer *consumerImpl) connect() error {
 }
 
 func (consumer consumerImpl) SubscribeEvents(ctx context.Context, consumerEvent models.ConsumerEvent, concurrency int) error {
+	var messages <-chan amqp.Delivery
+
 	channel, err := consumer.client.connection.Channel()
 	if err != nil {
 		return err
 	}
 
-	messages, err := channel.Consume(*consumer.Args.QueueName, "", false, false, false, false, nil)
+	if *consumer.Args.QueueName != "" {
+		messages, err = channel.Consume(*consumer.Args.QueueName, "", false, false, false, false, nil)
+	} else {
+		messages, err = channel.Consume(consumer.queue.Name, "", false, false, false, false, nil)
+	}
+
 	if err != nil {
 		return err
 	}
@@ -247,4 +258,8 @@ func (consumer consumerImpl) buildDeadLetterQueue() error {
 		}
 	}
 	return nil
+}
+
+func (consumer consumerImpl) GetQueue() amqp.Queue {
+	return consumer.queue
 }
