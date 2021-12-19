@@ -1,0 +1,14 @@
+image: golang:1.17-alpine
+
+stages:
+  - release
+
+create_tag:
+  image: node:latest
+  stage: release
+  before_script:
+    - npm install -g semantic-release @semantic-release/gitlab
+  script:
+    - semantic-release
+  only:
+    - main
