@@ -12,6 +12,7 @@ type Client interface {
 	NewPublisher(queueArgs *models.QueueArgs, exchangeArgs *models.ExchangeArgs) (Publisher, error)
 	NewConsumer(args models.ConsumerArgs) (Consumer, error)
 	GetConnection() *amqp.Connection
+	Close() error
 }
 
 type clientImpl struct {
