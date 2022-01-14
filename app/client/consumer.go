@@ -120,10 +120,6 @@ func (consumer *consumerImpl) createSubscribe(ctx context.Context, consumerEvent
 		bavalogs.Info(ctx).Interface("queue", consumer.Args.QueueName).Msg("Consumer channel has been closed")
 	}()
 
-	consumer.client.OnReconnect(func() {
-
-	})
-
 	for i := 0; i < concurrency; i++ {
 		bavalogs.Info(ctx).Interface("queue", consumer.Args.QueueName).Msgf("Processing messages on thread %v", i)
 		go func() {
