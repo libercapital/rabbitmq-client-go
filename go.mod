@@ -3,7 +3,7 @@ module gitlab.com/bavatech/architecture/software/libs/go-modules/rabbitmq-client
 go 1.16
 
 require (
-	github.com/google/uuid v1.2.0
-	github.com/rs/zerolog v1.25.0
-	github.com/streadway/amqp v1.0.0
+	github.com/google/uuid v1.3.0
+	github.com/rabbitmq/amqp091-go v1.3.0
+	gitlab.com/bavatech/architecture/software/libs/go-modules/bavalogs.git v0.1.12
 )

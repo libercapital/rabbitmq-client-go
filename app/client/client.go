@@ -1,10 +1,14 @@
 package client
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"sync/atomic"
 	"time"
 
-	"github.com/streadway/amqp"
+	amqp "github.com/rabbitmq/amqp091-go"
+	"gitlab.com/bavatech/architecture/software/libs/go-modules/bavalogs.git"
 	"gitlab.com/bavatech/architecture/software/libs/go-modules/rabbitmq-client.git/app/models"
 )
 
@@ -13,19 +17,25 @@ type Client interface {
 	NewConsumer(args models.ConsumerArgs) (Consumer, error)
 	GetConnection() *amqp.Connection
 	Close() error
+	OnReconnect(func())
 }
 
 type clientImpl struct {
 	credential        models.Credential
 	reconnectionDelay int
 
-	connection *amqp.Connection
-	closed     int32
+	connection        *amqp.Connection
+	closed            int32
+	callbackReconnect []func()
 }
 
 // IsClosed indicate closed by developer
 func (client *clientImpl) IsClosed() bool {
 	return (atomic.LoadInt32(&client.closed) == 1)
+}
+
+func (client *clientImpl) OnReconnect(callback func()) {
+	client.callbackReconnect = append(client.callbackReconnect, callback)
 }
 
 // Close ensure closed flag set
@@ -46,29 +56,61 @@ func (client *clientImpl) connect() error {
 	}
 	client.connection = conn
 
-	go func() {
+	go func(connParam *amqp.Connection) {
 		for {
-			_, ok := <-client.connection.NotifyClose(make(chan *amqp.Error))
-			// exit this goroutine if closed by developer
-			if !ok {
-				break
+			newConn, err := client.reconnect(connParam, client.credential.GetConnectionString())
+
+			if newConn == nil {
+				errMsg := errors.New("could not reconnect to rabbitmq")
+
+				if err != nil {
+					errMsg = err
+				}
+
+				bavalogs.Fatal(context.Background(), errMsg).Send()
 			}
 
-			// reconnect if not closed by developer
-			for {
-				// wait time for connection reconnect
-				time.Sleep(time.Duration(client.reconnectionDelay) * time.Second)
+			if err != nil {
+				bavalogs.Fatal(context.Background(), err).Send()
+			}
 
-				conn, err := amqp.Dial(client.credential.GetConnectionString())
-				if err == nil {
-					client.connection = conn
-					break
-				}
+			client.connection = newConn
+
+			for _, callback := range client.callbackReconnect {
+				callback()
 			}
 		}
-	}()
+	}(conn)
 
 	return nil
+}
+
+func (client *clientImpl) reconnect(connParam *amqp.Connection, credentials string) (*amqp.Connection, error) {
+	var err error
+	retries := 0
+
+	<-client.connection.NotifyClose(make(chan *amqp.Error))
+
+	for {
+		if retries >= 60 {
+			err = fmt.Errorf("could not reconnect to rabbitmq after %d retries", retries)
+			break
+		}
+
+		time.Sleep(time.Second)
+
+		connParam, err := amqp.Dial(client.credential.GetConnectionString())
+
+		if err != nil {
+			bavalogs.Warn(context.Background()).Err(err).Msg("rabbitmq trying reconnect")
+			retries++
+			continue
+		}
+
+		return connParam, nil
+	}
+
+	return nil, err
 }
 
 func New(credential models.Credential, reconnectionDelay int) (Client, error) {
