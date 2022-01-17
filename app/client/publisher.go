@@ -1,11 +1,12 @@
 package client
 
 import (
+	"context"
 	"fmt"
 	"sync/atomic"
-	"time"
 
-	"github.com/streadway/amqp"
+	amqp "github.com/rabbitmq/amqp091-go"
+	"gitlab.com/bavatech/architecture/software/libs/go-modules/bavalogs.git"
 	"gitlab.com/bavatech/architecture/software/libs/go-modules/rabbitmq-client.git/app/models"
 )
 
@@ -43,6 +44,18 @@ func (publisher *publisherImpl) Close() error {
 }
 
 func (publish *publisherImpl) connect() error {
+	publish.client.OnReconnect(func() {
+		err := publish.createChannel()
+
+		if err != nil {
+			bavalogs.Fatal(context.Background(), err).Msg("cannot recreate publisher channel in rabbitmq")
+		}
+	})
+
+	return publish.createChannel()
+}
+
+func (publish *publisherImpl) createChannel() error {
 	channel, err := publish.client.connection.Channel()
 	if err != nil {
 		return err
@@ -66,30 +79,6 @@ func (publish *publisherImpl) connect() error {
 
 		publish.exchangeName = &exchangeArgs.Name
 	}
-
-	go func() {
-		for {
-			_, ok := <-publish.channel.NotifyClose(make(chan *amqp.Error))
-			// exit this goroutine if closed by developer
-			if !ok || publish.IsClosed() {
-				channel.Close() // close again, ensure closed flag set when connection closed
-				break
-			}
-
-			// reconnect if not closed by developer
-			for {
-				// wait time for connection reconnect
-				time.Sleep(time.Duration(publish.client.reconnectionDelay) * time.Second)
-
-				ch, err := publish.client.connection.Channel()
-				if err == nil {
-					publish.channel = ch
-					break
-				}
-			}
-		}
-
-	}()
 
 	return nil
 }

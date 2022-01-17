@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/rs/zerolog/log"
-	"github.com/streadway/amqp"
+	amqp "github.com/rabbitmq/amqp091-go"
+	"gitlab.com/bavatech/architecture/software/libs/go-modules/bavalogs.git"
 	"gitlab.com/bavatech/architecture/software/libs/go-modules/rabbitmq-client.git/app/models"
 )
 
@@ -81,34 +81,22 @@ func (consumer *consumerImpl) connect() error {
 		}
 	}
 
-	go func() {
-		for {
-			_, ok := <-channel.NotifyClose(make(chan *amqp.Error))
-			// exit this goroutine if closed by developer
-			if !ok || consumer.IsClosed() {
-				channel.Close() // close again, ensure closed flag set when connection closed
-				break
-			}
-
-			// reconnect if not closed by developer
-			for {
-				// wait time for connection reconnect
-				time.Sleep(time.Duration(consumer.client.reconnectionDelay) * time.Second)
-
-				ch, err := consumer.client.connection.Channel()
-				if err == nil {
-					consumer.channel = ch
-					break
-				}
-			}
-		}
-
-	}()
-
 	return nil
 }
 
-func (consumer consumerImpl) SubscribeEvents(ctx context.Context, consumerEvent models.ConsumerEvent, concurrency int) error {
+func (consumer *consumerImpl) SubscribeEvents(ctx context.Context, consumerEvent models.ConsumerEvent, concurrency int) error {
+	consumer.client.OnReconnect(func() {
+		err := consumer.createSubscribe(ctx, consumerEvent, concurrency)
+
+		if err != nil {
+			bavalogs.Fatal(context.Background(), err).Msg("cannot recreate subscriber events in rabbitmq")
+		}
+	})
+
+	return consumer.createSubscribe(ctx, consumerEvent, concurrency)
+}
+
+func (consumer *consumerImpl) createSubscribe(ctx context.Context, consumerEvent models.ConsumerEvent, concurrency int) error {
 	var messages <-chan amqp.Delivery
 
 	channel, err := consumer.client.connection.Channel()
@@ -129,11 +117,11 @@ func (consumer consumerImpl) SubscribeEvents(ctx context.Context, consumerEvent 
 	go func() {
 		<-ctx.Done()
 		channel.Close()
-		log.Info().Interface("queue", consumer.Args.QueueName).Msg("Consumer channel has been closed")
+		bavalogs.Info(ctx).Interface("queue", consumer.Args.QueueName).Msg("Consumer channel has been closed")
 	}()
 
 	for i := 0; i < concurrency; i++ {
-		log.Info().Interface("queue", consumer.Args.QueueName).Msgf("Processing messages on thread %v", i)
+		bavalogs.Info(ctx).Interface("queue", consumer.Args.QueueName).Msgf("Processing messages on thread %v", i)
 		go func() {
 			for message := range messages {
 				var body []byte
@@ -143,8 +131,8 @@ func (consumer consumerImpl) SubscribeEvents(ctx context.Context, consumerEvent 
 
 				var event models.IncomingEventMessage
 				if err := json.Unmarshal(body, &event); err != nil {
-					log.Error().
-						Err(err).
+					bavalogs.
+						Error(ctx, err).
 						Interface("corr_id", message.CorrelationId).
 						Interface("queue", consumer.Args.QueueName).
 						Msg("Failed to unmarshal incoming event message, sending message do dlq")
@@ -156,7 +144,7 @@ func (consumer consumerImpl) SubscribeEvents(ctx context.Context, consumerEvent 
 				event.Content.ReplyTo = message.ReplyTo
 				event.CorrelationID = message.CorrelationId
 
-				log.Info().
+				bavalogs.Info(ctx).
 					Interface("id", event.Content.ID).
 					Interface("corr_id", message.CorrelationId).
 					Interface("queue", consumer.Args.QueueName).
