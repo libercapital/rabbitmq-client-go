@@ -1,6 +1,6 @@
 # Welcome to RabbitMQ client module 👋
 
-![Version](https://img.shields.io/badge/version-1.0.3-blue.svg?cacheSeconds=2592000)
+![Version](https://img.shields.io/badge/version-2.0.0-blue.svg?cacheSeconds=2592000)
 
 > Module to connect Bava's apps to RabbitMq Instance
 
@@ -20,22 +20,23 @@ go get gitlab.com/bavatech/architecture/software/libs/go-modules/rabbitmq-client
 > - [Tutorial Rabbit MQ Go - Work Queues](https://www.rabbitmq.com/tutorials/tutorial-two-go.html)
 > - [Tutorial Rabbit MQ Go - Routing](https://www.rabbitmq.com/tutorials/tutorial-four-go.html)
 > - [Tutorial Rabbit MQ Go - Remote procedure call (RPC)](https://www.rabbitmq.com/tutorials/tutorial-six-go.html)
+> - [RPC - Direct Reply To](https://www.rabbitmq.com/direct-reply-to.html)
 
 ### Create a RabbitMQ connection
 
 ```go
 var vhost = "vhost"
 
-credential := rabbit_models.Credential{
+credential := rabbitmq.Credential{
   Host:     "host",
   User:     "user",
   Password: "password",
   Vhost:    &vhost //optional default User as vhost,
-  Protocol: rabbit_models.AMQPS //optional default AMQPS
+  Protocol: rabbitmq.AMQPS //optional default AMQPS
 }
 
 delay := 1 //time in seconds to try to reconnect when the connection is broken
-client, err := rabbit_client.New(credential, delay)
+client, err := rabbitmq.New(credential, delay)
 
 // if needed, the connection for the ampq its shared by the function GetConnection
 amqpConnection := client.GetConnection()
@@ -47,7 +48,7 @@ Create new publisher
 
 ```go
 publisher, err := client.NewPublisher(
-  &rabbit_models.QueueArgs{
+  &rabbitmq.QueueArgs{
     Name: "queue-name",
   },
   nil,
@@ -67,9 +68,9 @@ jsonBodyMessage := BodyMessage{
   Value: "value",
 }
 
-bodyMessage := rabbit_models.IncomingEventMessage{
+bodyMessage := rabbitmq.IncomingEventMessage{
   Source: constants.ApplicationName,
-  Content: rabbit_models.Event{
+  Content: rabbitmq.Event{
     ID:         messageId,
     Object:     event,
     Properties: jsonBodyMessage,
@@ -77,7 +78,7 @@ bodyMessage := rabbit_models.IncomingEventMessage{
 }
 
 content, _ := json.Marshal(bodyMessage)
-message := rabbit_models.PublishingMessage{
+message := rabbitmq.PublishingMessage{
 	Body: content,
 }
 
@@ -99,7 +100,7 @@ Create new publisher
 ```go
 publisher, err := client.NewPublisher(
   nil,
-  &rabbit_models.ExchangeArgs{
+  &rabbitmq.ExchangeArgs{
     Name : "exchange-name",
     Type : "direct",
     Durable : false,
@@ -115,9 +116,9 @@ Sending message
 ```go
 messageId := uuid.NewString()
 
-bodyMessage := rabbit_models.IncomingEventMessage{
+bodyMessage := rabbitmq.IncomingEventMessage{
   Source: constants.ApplicationName,
-  Content: rabbit_models.Event{
+  Content: rabbitmq.Event{
     ID:         messageId,
     Object:     event,
     Properties: jsonBodyMessage,
@@ -125,7 +126,7 @@ bodyMessage := rabbit_models.IncomingEventMessage{
 }
 
 content, _ := json.Marshal(bodyMessage)
-message := rabbit_models.PublishingMessage{
+message := rabbitmq.PublishingMessage{
 	Body: content,
 }
 
@@ -140,25 +141,25 @@ err := queue.SendMessage(
 )
 ```
 
-### Simple RPC queue consumer code
+### Simple RPC implementation code
+
+RPC consists into Send message and receives an reply. Its required and correlation ID
 
 ```go
-consumer, err := client.NewConsumer(&rabbit_models.ConsumerArgs{QueueName: "queue-name"})
+exchange := "exchange if publish into one"
+routeKey := "routing key when publish into exchange or queue name"
+messageToPublish := rabbitmq.IncomingEventMessage{}
+timout := 25 //consumer timeout
 
-event := rabbit_models.ConsumerEvent{
-  Handler: func(message model.IncomingEventMessage) bool,
-  Timeout: 25, //25 seconds
-}
-ctx := context.Background()
-err = consumer.ReadMessage(ctx, correlationID, event)
+message, err := client.DirectReplyTo(ctx, exchange, routeKey, timeout, messageToPublish)
 ```
 
 ### Simple queue consumer code
 
 ```go
-consumer, err := client.NewConsumer(&rabbit_models.ConsumerArgs{QueueName:"queue-name"})
+consumer, err := client.NewConsumer(&rabbitmq.ConsumerArgs{QueueName:"queue-name"})
 
-event := rabbit_models.ConsumerEvent{
+event := rabbitmq.ConsumerEvent{
   Handler:   func(message model.IncomingEventMessage) bool,
 }
 ctx := context.Background()
@@ -169,7 +170,7 @@ err = consumer.SubscribeEvents(ctx, event, 10) // 10 threads
 
 ```go
 consumer, err := client.NewConsumer(
-  &rabbit_models.ConsumerArgs{
+  &rabbitmq.ConsumerArgs{
     QueueName: "queue-name",
     TimeToLive: 30000,
     DeadLetterName: "dlq-queue-name",
@@ -177,7 +178,7 @@ consumer, err := client.NewConsumer(
   }
 )
 
-event := rabbit_models.ConsumerEvent{
+event := rabbitmq.ConsumerEvent{
   Handler:   func(message model.IncomingEventMessage) bool,
 }
 ctx := context.Background()
@@ -188,10 +189,10 @@ err = consumer.SubscribeEvents(ctx, event, 10) // 10 threads
 
 ```go
 consumer, err := client.NewConsumer(
-  &rabbit_models.ConsumerArgs{
+  &rabbitmq.ConsumerArgs{
     RoutingKey: "routing-key", //chave para roteamento no exchange
     QueueName: "queue-name"
-    ExchangeArgs: &rabbit_models.ExchangeArgs{
+    ExchangeArgs: &rabbitmq.ExchangeArgs{
       Name : "exchange-name",
       Type : "direct",
       Durable : false,
@@ -202,7 +203,7 @@ consumer, err := client.NewConsumer(
   }
 )
 
-event := rabbit_models.ConsumerEvent{
+event := rabbitmq.ConsumerEvent{
   Handler:   func(message model.IncomingEventMessage) bool,
 }
 ctx := context.Background()
