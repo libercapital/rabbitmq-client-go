@@ -84,7 +84,7 @@ func (consumer *consumerImpl) SubscribeEvents(ctx context.Context, consumerEvent
 		err := consumer.createSubscribe(ctx, consumerEvent, concurrency)
 
 		if err != nil {
-			bavalogs.Fatal(context.Background(), err).Msg("cannot recreate subscriber events in rabbitmq")
+			bavalogs.Fatal(ctx, err).Msg("cannot recreate subscriber events in rabbitmq")
 		}
 	})
 
