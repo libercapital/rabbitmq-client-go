@@ -1,4 +1,4 @@
-module gitlab.com/bavatech/architecture/software/libs/go-modules/rabbitmq-client.git/v2
+module gitlab.com/bavatech/architecture/software/libs/go-modules/rabbitmq-client.git/v3
 
 go 1.18
 
