@@ -29,6 +29,7 @@ type clientImpl struct {
 	connection        *amqp.Connection
 	closed            int32
 	callbackReconnect []func()
+	declare           bool
 }
 
 // IsClosed indicate closed by developer
@@ -115,8 +116,12 @@ func (client *clientImpl) reconnect(connParam *amqp.Connection, credentials stri
 	return nil, err
 }
 
-func New(credential Credential, reconnectionDelay int) (Client, error) {
-	client := &clientImpl{credential: credential, reconnectionDelay: reconnectionDelay}
+func New(credential Credential, options ClientOptions) (Client, error) {
+	client := &clientImpl{
+		credential:        credential,
+		reconnectionDelay: options.ReconnectionDelay,
+		declare:           options.Declare,
+	}
 	err := client.connect()
 	if err != nil {
 		return nil, err
@@ -125,13 +130,22 @@ func New(credential Credential, reconnectionDelay int) (Client, error) {
 }
 
 func (client *clientImpl) NewPublisher(queueArgs *QueueArgs, exchangeArgs *ExchangeArgs) (Publisher, error) {
-	publish := publisherImpl{queueArgs: queueArgs, exchangeArgs: exchangeArgs, client: client}
+	publish := publisherImpl{
+		queueArgs:    queueArgs,
+		exchangeArgs: exchangeArgs,
+		client:       client,
+		declare:      client.declare,
+	}
 	err := publish.connect()
 	return &publish, err
 }
 
 func (client *clientImpl) NewConsumer(args ConsumerArgs) (Consumer, error) {
-	consumer := consumerImpl{Args: args, client: client}
+	consumer := consumerImpl{
+		Args:    args,
+		client:  client,
+		declare: client.declare,
+	}
 	err := consumer.connect()
 	return &consumer, err
 }

@@ -27,6 +27,11 @@ type Credential struct {
 	Protocol AmqpProtocol
 }
 
+type ClientOptions struct {
+	ReconnectionDelay int
+	Declare           bool
+}
+
 func (credential Credential) GetConnectionString() string {
 	if credential.Protocol == "" {
 		credential.Protocol = AMQPS

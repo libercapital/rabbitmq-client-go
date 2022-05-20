@@ -4,8 +4,8 @@ go 1.18
 
 require (
 	github.com/google/uuid v1.3.0
-	github.com/rabbitmq/amqp091-go v1.3.0
-	gitlab.com/bavatech/architecture/software/libs/go-modules/bavalogs.git v0.1.12
+	github.com/rabbitmq/amqp091-go v1.3.4
+	gitlab.com/bavatech/architecture/software/libs/go-modules/bavalogs.git v0.1.13
 )
 
 require (

@@ -21,6 +21,7 @@ type consumerImpl struct {
 	channel *amqp.Channel
 	closed  int32
 	queue   amqp.Queue
+	declare bool
 }
 
 // IsClosed indicate closed by developer
@@ -50,6 +51,10 @@ func (consumer *consumerImpl) connect() error {
 		if err := consumer.channel.Qos(*consumer.Args.PrefetchCount, 0, false); err != nil {
 			return fmt.Errorf("prefetch count setting error: %v", err)
 		}
+	}
+
+	if consumer.declare == false {
+		return nil
 	}
 
 	if err := consumer.buildDeadLetterQueue(); err != nil {
