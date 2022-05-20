@@ -3,10 +3,10 @@ package rabbitmq
 import (
 	"context"
 	"fmt"
+	"gitlab.com/bavatech/architecture/software/libs/go-modules/bavalogs.git"
 	"sync/atomic"
 
 	amqp "github.com/rabbitmq/amqp091-go"
-	"gitlab.com/bavatech/architecture/software/libs/go-modules/bavalogs.git"
 )
 
 type Publisher interface {
@@ -24,6 +24,7 @@ type publisherImpl struct {
 	queue        *amqp.Queue
 	exchangeName *string
 	closed       int32
+	declare      bool
 }
 
 // IsClosed indicate closed by developer
@@ -61,6 +62,10 @@ func (publish *publisherImpl) createChannel() error {
 	}
 	publish.channel = channel
 
+	if publish.declare == false {
+		return nil
+	}
+
 	if publish.queueArgs != nil {
 		queueArgs := publish.queueArgs
 		queue, err := channel.QueueDeclare(queueArgs.Name, queueArgs.Durable, queueArgs.AutoDelete, queueArgs.Exclusive, queueArgs.NoWait, nil)
@@ -69,6 +74,7 @@ func (publish *publisherImpl) createChannel() error {
 		}
 		publish.queue = &queue
 	}
+
 	if publish.exchangeArgs != nil {
 		exchangeArgs := publish.exchangeArgs
 		err = channel.ExchangeDeclare(exchangeArgs.Name, exchangeArgs.Type, exchangeArgs.Durable, exchangeArgs.AutoDelete, exchangeArgs.Internal, exchangeArgs.NoWait, nil)

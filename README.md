@@ -1,6 +1,6 @@
 # Welcome to RabbitMQ client module 👋
 
-![Version](https://img.shields.io/badge/version-2.0.0-blue.svg?cacheSeconds=2592000)
+![Version](https://img.shields.io/badge/version-3.0.0-blue.svg?cacheSeconds=2592000)
 
 > Module to connect Bava's apps to RabbitMq Instance
 
@@ -35,8 +35,12 @@ credential := rabbitmq.Credential{
   Protocol: rabbitmq.AMQPS //optional default AMQPS
 }
 
-delay := 1 //time in seconds to try to reconnect when the connection is broken
-client, err := rabbitmq.New(credential, delay)
+options := rabbitmq.ClienOptions{
+  ReconnectionDelay: 1, //time in seconds to try to reconnect when the connection is broken
+  Declare: false, // Declare consumers and producers configurations, default is false
+}
+
+client, err := rabbitmq.New(credential, options)
 
 // if needed, the connection for the ampq its shared by the function GetConnection
 amqpConnection := client.GetConnection()
@@ -225,6 +229,11 @@ err = consumer.SubscribeEvents(ctx, event, 5) //5 threads
 👤 **Giuseppe Menti**
 
 - Gitlab: [@giuseppe.menti@bavabank.com](https://gitlab.com/giuseppe.menti)
+
+👤 **Henrique Schmidt**
+
+- Github: [@henrique502](https://github.com/henrique502)
+
 
 ## Show your support
 
