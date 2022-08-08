@@ -99,11 +99,14 @@ func (publish *publisherImpl) SendMessage(exchange string, routingKey string, ma
 	}
 
 	if publish.client.reconnecting != nil {
-		<-publish.client.reconnecting
+		bavalogs.Debug(context.Background()).Interface("publish.channel", publish.channel).Msg("waiting for reconnection")
+		r := <-publish.client.reconnecting
+		bavalogs.Debug(context.Background()).Bool("publish.client.reconnecting", r).Interface("publish.channel", publish.channel).Msg("waiting for reconnection")
 	}
 
-	if publish.client.IsClosed() {
+	if publish.client.connection.IsClosed() {
 		if err := publish.client.connect(); err != nil {
+			bavalogs.Debug(context.Background()).Err(err).Interface("publish.channel", publish.channel).Msg("failed to reconnect")
 			return err
 		}
 	}
