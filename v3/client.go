@@ -100,12 +100,14 @@ func (client *clientImpl) reconnect(connParam *amqp.Connection, credentials stri
 			break
 		}
 
+		bavalogs.Debug(context.Background()).Msg("rabbitmq connection lost, trying reconnect")
+
 		time.Sleep(time.Second)
 
 		connParam, err := amqp.Dial(client.credential.GetConnectionString())
 
 		if err != nil {
-			bavalogs.Warn(context.Background()).Err(err).Msg("rabbitmq trying reconnect")
+			bavalogs.Warn(context.Background()).Err(err).Msg("error rabbitmq trying reconnect")
 			retries++
 			continue
 		}
