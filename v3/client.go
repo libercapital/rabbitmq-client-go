@@ -30,6 +30,8 @@ type clientImpl struct {
 	closed            int32
 	callbackReconnect []func()
 	declare           bool
+
+	reconnecting chan bool
 }
 
 // IsClosed indicate closed by developer
@@ -43,6 +45,8 @@ func (client *clientImpl) OnReconnect(callback func()) {
 
 // Close ensure closed flag set
 func (client *clientImpl) Close() error {
+	bavalogs.Debug(context.Background()).Stack().Msg("closing connection")
+
 	if client.IsClosed() {
 		return amqp.ErrClosed
 	}
@@ -92,7 +96,10 @@ func (client *clientImpl) reconnect(connParam *amqp.Connection, credentials stri
 	var err error
 	retries := 0
 
-	<-client.connection.NotifyClose(make(chan *amqp.Error))
+	chanErr := <-client.connection.NotifyClose(make(chan *amqp.Error))
+
+	client.reconnecting = make(chan bool)
+	defer func() { client.reconnecting = nil }()
 
 	for {
 		if retries >= 60 {
@@ -100,7 +107,7 @@ func (client *clientImpl) reconnect(connParam *amqp.Connection, credentials stri
 			break
 		}
 
-		bavalogs.Debug(context.Background()).Msg("rabbitmq connection lost, trying reconnect")
+		bavalogs.Debug(context.Background()).Interface("chan_err", chanErr).Msg("rabbitmq connection lost, trying reconnect")
 
 		time.Sleep(time.Second)
 
@@ -112,9 +119,11 @@ func (client *clientImpl) reconnect(connParam *amqp.Connection, credentials stri
 			continue
 		}
 
+		client.reconnecting <- false
 		return connParam, nil
 	}
 
+	client.reconnecting <- false
 	return nil, err
 }
 
