@@ -35,6 +35,8 @@ func (publisher *publisherImpl) IsClosed() bool {
 
 // Close ensure closed flag set
 func (publisher *publisherImpl) Close() error {
+	bavalogs.Debug(context.Background()).Stack().Msg("closing channel")
+
 	if publisher.IsClosed() {
 		return amqp.ErrClosed
 	}
@@ -94,6 +96,16 @@ func (publish *publisherImpl) createChannel() error {
 func (publish *publisherImpl) SendMessage(exchange string, routingKey string, mandatory bool, immediate bool, message PublishingMessage) error {
 	if message.ContentType == "" {
 		message.ContentType = "application/json"
+	}
+
+	if publish.client.reconnecting != nil {
+		<-publish.client.reconnecting
+	}
+
+	if publish.client.IsClosed() {
+		if err := publish.client.connect(); err != nil {
+			return err
+		}
 	}
 
 	return publish.channel.Publish(
