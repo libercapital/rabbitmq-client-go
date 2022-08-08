@@ -3,8 +3,9 @@ package rabbitmq
 import (
 	"context"
 	"fmt"
-	"gitlab.com/bavatech/architecture/software/libs/go-modules/bavalogs.git"
 	"sync/atomic"
+
+	"gitlab.com/bavatech/architecture/software/libs/go-modules/bavalogs.git"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -45,6 +46,8 @@ func (publisher *publisherImpl) Close() error {
 
 func (publish *publisherImpl) connect() error {
 	publish.client.OnReconnect(func() {
+		bavalogs.Debug(context.Background()).Bool("connection_isclosed", publish.client.connection.IsClosed()).Msg("reconnecting... creating new channel")
+
 		err := publish.createChannel()
 
 		if err != nil {
