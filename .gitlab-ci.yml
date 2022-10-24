@@ -4,7 +4,7 @@ stages:
   - release
 
 create_tag:
-  image: node:latest
+  image: node:lts
   stage: release
   before_script:
     - npm install -g semantic-release @semantic-release/gitlab
