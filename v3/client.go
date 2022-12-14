@@ -109,7 +109,10 @@ func (client *clientImpl) reconnect(connParam *amqp.Connection, credentials stri
 	chanErr := <-client.connection.NotifyClose(make(chan *amqp.Error))
 
 	client.reconnecting = make(chan bool)
-	defer func() { client.reconnecting = nil }()
+	defer func() {
+		close(client.reconnecting)
+		client.reconnecting = nil
+	}()
 
 	for {
 		if retries >= 60 {
@@ -129,11 +132,9 @@ func (client *clientImpl) reconnect(connParam *amqp.Connection, credentials stri
 			continue
 		}
 
-		client.reconnecting <- false
 		return connParam, nil
 	}
 
-	client.reconnecting <- false
 	return nil, err
 }
 
