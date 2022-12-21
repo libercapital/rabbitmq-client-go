@@ -30,7 +30,7 @@ type Credential struct {
 type ClientOptions struct {
 	ReconnectionDelay int
 	Declare           bool
-	HearbeatTimeout   *int
+	HeartbeatTimeout  *int
 }
 
 func (credential Credential) GetConnectionString() string {
