@@ -31,8 +31,8 @@ type clientImpl struct {
 	callbackReconnect []func()
 	declare           bool
 
-	reconnecting    chan bool
-	hearbeatTimeout *int
+	reconnecting     chan bool
+	heartbeatTimeout *int
 }
 
 // IsClosed indicate closed by developer
@@ -58,13 +58,13 @@ func (client *clientImpl) Close() error {
 }
 
 func (client *clientImpl) connect() error {
-	if client.hearbeatTimeout == nil {
+	if client.heartbeatTimeout == nil {
 		defaultValue := 10
-		client.hearbeatTimeout = &defaultValue
+		client.heartbeatTimeout = &defaultValue
 	}
 
 	conn, err := amqp.DialConfig(client.credential.GetConnectionString(), amqp.Config{
-		Heartbeat: time.Duration(*client.hearbeatTimeout) * time.Second,
+		Heartbeat: time.Duration(*client.heartbeatTimeout) * time.Second,
 	})
 
 	if err != nil {
@@ -143,7 +143,7 @@ func New(credential Credential, options ClientOptions) (Client, error) {
 		credential:        credential,
 		reconnectionDelay: options.ReconnectionDelay,
 		declare:           options.Declare,
-		hearbeatTimeout:   options.HearbeatTimeout,
+		heartbeatTimeout:  options.HeartbeatTimeout,
 	}
 
 	err := client.connect()
@@ -207,7 +207,10 @@ func (client *clientImpl) DirectReplyTo(ctx context.Context, exchange, key strin
 		return
 	}
 
-	defer channel.Cancel(clientId, false)
+	defer func() {
+		channel.Cancel(clientId, false)
+		channel.Close()
+	}()
 
 	for {
 		select {
