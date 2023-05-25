@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -202,6 +203,7 @@ func (client *clientImpl) DirectReplyTo(ctx context.Context, exchange, key strin
 	if err = channel.Publish(exchange, key, false, false, amqp.Publishing{
 		ReplyTo:       "amq.rabbitmq.reply-to",
 		CorrelationId: message.CorrelationID,
+		Expiration:    strconv.Itoa(timeout * 1000),
 		Body:          b,
 	}); err != nil {
 		return
