@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -183,9 +184,12 @@ func (client *clientImpl) GetConnection() *amqp.Connection {
 func (client *clientImpl) DirectReplyTo(ctx context.Context, exchange, key string, timeout int, message IncomingEventMessage) (event IncomingEventMessage, err error) {
 	clientId := uuid.NewString()
 
+	expiration := ""
+
 	var timer time.Timer
 	if timeout > 0 {
 		timer = *time.NewTimer(time.Duration(timeout) * time.Second)
+		expiration = strconv.Itoa(timeout * 1000)
 	}
 
 	channel, err := client.connection.Channel()
@@ -202,6 +206,7 @@ func (client *clientImpl) DirectReplyTo(ctx context.Context, exchange, key strin
 	if err = channel.Publish(exchange, key, false, false, amqp.Publishing{
 		ReplyTo:       "amq.rabbitmq.reply-to",
 		CorrelationId: message.CorrelationID,
+		Expiration:    expiration,
 		Body:          b,
 	}); err != nil {
 		return
