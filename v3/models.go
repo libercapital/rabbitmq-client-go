@@ -1,12 +1,14 @@
 package rabbitmq
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
+	"gitlab.com/bavatech/architecture/software/libs/go-modules/bavalogs.git/tracing"
 )
 
 var TIMEOUT_ERROR = errors.New("consumer timeout reached")
@@ -57,6 +59,7 @@ type ConsumerArgs struct {
 	TimeToLive     *int //in milliseconds
 	Redelivery     bool
 	Durable        bool
+	Tracer         tracing.StartContextAndSpanConfig
 }
 
 const DeadLetterExchangeName = "default-dlq-exchange"
@@ -102,7 +105,7 @@ type QueueArgs struct {
 	NoWait     bool
 }
 
-type ConsumerEventHandler func(data IncomingEventMessage) bool
+type ConsumerEventHandler func(ctx context.Context, data IncomingEventMessage) bool
 
 type ConsumerEvent struct {
 	Handler ConsumerEventHandler

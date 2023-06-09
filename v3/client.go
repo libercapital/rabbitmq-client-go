@@ -12,6 +12,9 @@ import (
 	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"gitlab.com/bavatech/architecture/software/libs/go-modules/bavalogs.git"
+	"gitlab.com/bavatech/architecture/software/libs/go-modules/bavalogs.git/tracing"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 type Client interface {
@@ -20,7 +23,7 @@ type Client interface {
 	GetConnection() *amqp.Connection
 	Close() error
 	OnReconnect(func())
-	DirectReplyTo(ctx context.Context, exchange, key string, timeout int, messge IncomingEventMessage) (IncomingEventMessage, error)
+	DirectReplyTo(ctx context.Context, exchange, key string, timeout int, messge IncomingEventMessage, trace tracing.StartContextAndSpanConfig) (IncomingEventMessage, error)
 }
 
 type clientImpl struct {
@@ -181,7 +184,7 @@ func (client *clientImpl) GetConnection() *amqp.Connection {
 
 // DirectReplyTo publish an message into queue and expect an response RPC formart
 // Error can be typeof models.TIMEOUT_ERROR
-func (client *clientImpl) DirectReplyTo(ctx context.Context, exchange, key string, timeout int, message IncomingEventMessage) (event IncomingEventMessage, err error) {
+func (client *clientImpl) DirectReplyTo(ctx context.Context, exchange, key string, timeout int, message IncomingEventMessage, trace tracing.StartContextAndSpanConfig) (event IncomingEventMessage, err error) {
 	clientId := uuid.NewString()
 
 	expiration := ""
@@ -202,12 +205,31 @@ func (client *clientImpl) DirectReplyTo(ctx context.Context, exchange, key strin
 		return
 	}
 
+	var headers amqp.Table
+
+	if trace.OperationName != "" {
+		var span ddtrace.Span
+
+		span, ctx = tracing.StartSpanFromContext(ctx, trace)
+
+		defer func(e *error) {
+			defer span.Finish(tracer.WithError(*e))
+		}(&err)
+	}
+
+	if span, hasTrace := tracing.SpanFromContext(ctx); hasTrace {
+		headers = make(amqp.Table)
+
+		headers["x-datadog-trace-id"] = strconv.FormatUint(span.Context().TraceID(), 10)
+	}
+
 	b, _ := json.Marshal(message)
-	if err = channel.Publish(exchange, key, false, false, amqp.Publishing{
+	if err = channel.PublishWithContext(ctx, exchange, key, false, false, amqp.Publishing{
 		ReplyTo:       "amq.rabbitmq.reply-to",
 		CorrelationId: message.CorrelationID,
 		Expiration:    expiration,
 		Body:          b,
+		Headers:       headers,
 	}); err != nil {
 		return
 	}

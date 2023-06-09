@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"sync/atomic"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 	"gitlab.com/bavatech/architecture/software/libs/go-modules/bavalogs.git"
+	"gitlab.com/bavatech/architecture/software/libs/go-modules/bavalogs.git/tracing"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 )
 
 type Consumer interface {
@@ -120,45 +123,63 @@ func (consumer *consumerImpl) createSubscribe(ctx context.Context, consumerEvent
 		bavalogs.Info(ctx).Interface("queue", consumer.Args.QueueName).Msg("Consumer channel has been closed")
 	}()
 
+	processMessage := func(message amqp.Delivery) {
+		var span ddtrace.Span
+		ctxTrace := context.Background()
+
+		if traceID, hasTrace := message.Headers["x-datadog-trace-id"]; hasTrace {
+			traceIDUint, err := strconv.ParseUint(traceID.(string), 10, 64)
+
+			if err != nil {
+				bavalogs.Error(ctx, err).Msg("error converting traceID")
+			}
+
+			consumer.Args.Tracer.TraceID = traceIDUint
+		}
+
+		if consumer.Args.Tracer.OperationName != "" {
+			ctxTrace, span = tracing.StartContextAndSpan(ctxTrace, consumer.Args.Tracer)
+
+			defer span.Finish()
+		}
+
+		var body []byte
+		if message.Body != nil {
+			body = message.Body
+		}
+
+		var event IncomingEventMessage
+
+		if err := json.Unmarshal(body, &event); err != nil {
+			bavalogs.
+				Error(ctxTrace, err).
+				Interface("corr_id", message.CorrelationId).
+				Interface("queue", consumer.Args.QueueName).
+				Msg("Failed to unmarshal incoming event message, sending message do dlq")
+
+			message.Nack(false, false) //To move to dlq we need to send a Nack with requeue = false
+			return
+		}
+
+		event.Content.ReplyTo = message.ReplyTo
+		event.CorrelationID = message.CorrelationId
+
+		// if tha handler returns true then ACK, else NACK
+		// the message back into the rabbit queue for another round of processing
+		if consumerEvent.Handler(ctxTrace, event) {
+			message.Ack(false)
+		} else if consumer.Args.Redelivery && !message.Redelivered {
+			message.Nack(false, true)
+		} else {
+			message.Nack(false, false)
+		}
+	}
+
 	for i := 0; i < concurrency; i++ {
 		bavalogs.Info(ctx).Interface("queue", consumer.Args.QueueName).Msgf("Processing messages on thread %v", i)
 		go func() {
 			for message := range messages {
-				var body []byte
-				if message.Body != nil {
-					body = message.Body
-				}
-
-				var event IncomingEventMessage
-				if err := json.Unmarshal(body, &event); err != nil {
-					bavalogs.
-						Error(ctx, err).
-						Interface("corr_id", message.CorrelationId).
-						Interface("queue", consumer.Args.QueueName).
-						Msg("Failed to unmarshal incoming event message, sending message do dlq")
-
-					message.Nack(false, false) //To move to dlq we need to send a Nack with requeue = false
-					continue
-				}
-
-				event.Content.ReplyTo = message.ReplyTo
-				event.CorrelationID = message.CorrelationId
-
-				bavalogs.Info(ctx).
-					Interface("id", event.Content.ID).
-					Interface("corr_id", message.CorrelationId).
-					Interface("queue", consumer.Args.QueueName).
-					Msg("Received AMQP message")
-
-				// if tha handler returns true then ACK, else NACK
-				// the message back into the rabbit queue for another round of processing
-				if consumerEvent.Handler(event) {
-					message.Ack(false)
-				} else if consumer.Args.Redelivery && !message.Redelivered {
-					message.Nack(false, true)
-				} else {
-					message.Nack(false, false)
-				}
+				processMessage(message)
 			}
 		}()
 	}

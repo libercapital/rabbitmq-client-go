@@ -3,9 +3,13 @@ package rabbitmq
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"sync/atomic"
 
 	"gitlab.com/bavatech/architecture/software/libs/go-modules/bavalogs.git"
+	"gitlab.com/bavatech/architecture/software/libs/go-modules/bavalogs.git/tracing"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -13,7 +17,7 @@ import (
 type Publisher interface {
 	GetQueueName() (*string, error)
 	GetExchangeName() (*string, error)
-	SendMessage(exchange string, routingKey string, mandatory bool, immediate bool, message PublishingMessage) error
+	SendMessage(ctx context.Context, exchange string, routingKey string, mandatory bool, immediate bool, message PublishingMessage, trace tracing.StartContextAndSpanConfig) error
 }
 
 type publisherImpl struct {
@@ -93,7 +97,7 @@ func (publish *publisherImpl) createChannel() error {
 	return nil
 }
 
-func (publish *publisherImpl) SendMessage(exchange string, routingKey string, mandatory bool, immediate bool, message PublishingMessage) error {
+func (publish *publisherImpl) SendMessage(ctx context.Context, exchange string, routingKey string, mandatory bool, immediate bool, message PublishingMessage, trace tracing.StartContextAndSpanConfig) (err error) {
 	if message.ContentType == "" {
 		message.ContentType = "application/json"
 	}
@@ -111,7 +115,24 @@ func (publish *publisherImpl) SendMessage(exchange string, routingKey string, ma
 		}
 	}
 
-	return publish.channel.Publish(
+	if trace.OperationName != "" {
+		var span ddtrace.Span
+
+		span, ctx = tracing.StartSpanFromContext(ctx, trace)
+
+		defer func(e *error) {
+			span.Finish(tracer.WithError(*e))
+		}(&err)
+	}
+
+	if span, ok := tracing.SpanFromContext(ctx); ok {
+		message.Headers = make(amqp.Table)
+
+		message.Headers["x-datadog-trace-id"] = strconv.FormatUint(span.Context().TraceID(), 10)
+	}
+
+	return publish.channel.PublishWithContext(
+		ctx,
 		exchange,
 		routingKey,
 		mandatory,
