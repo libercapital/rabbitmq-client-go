@@ -124,6 +124,7 @@ func (consumer *consumerImpl) createSubscribe(ctx context.Context, consumerEvent
 	}()
 
 	processMessage := func(message amqp.Delivery) {
+		var tracerID uint64
 		var span ddtrace.Span
 		ctxTrace := context.Background()
 
@@ -134,11 +135,17 @@ func (consumer *consumerImpl) createSubscribe(ctx context.Context, consumerEvent
 				bavalogs.Error(ctx, err).Msg("error converting traceID")
 			}
 
-			consumer.Args.Tracer.TraceID = traceIDUint
+			tracerID = traceIDUint
 		}
 
 		if consumer.Args.Tracer.OperationName != "" {
-			ctxTrace, span = tracing.StartContextAndSpan(ctxTrace, consumer.Args.Tracer)
+			ctxTrace, span = tracing.StartContextAndSpan(ctxTrace, tracing.StartContextAndSpanConfig{
+				OperationName: consumer.Args.Tracer.OperationName,
+				SpanType:      consumer.Args.Tracer.SpanType,
+				ResourceName:  consumer.Args.Tracer.ResourceName,
+				TraceID:       tracerID,
+				Tags:          consumer.Args.Tracer.Tags,
+			})
 
 			defer span.Finish()
 		}
