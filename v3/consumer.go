@@ -123,72 +123,10 @@ func (consumer *consumerImpl) createSubscribe(ctx context.Context, consumerEvent
 		bavalogs.Info(ctx).Interface("queue", consumer.Args.QueueName).Msg("Consumer channel has been closed")
 	}()
 
-	processMessage := func(message amqp.Delivery) {
-		var tracerID uint64
-		var span ddtrace.Span
-		ctxTrace := context.Background()
-
-		if traceID, hasTrace := message.Headers["x-datadog-trace-id"]; hasTrace {
-			traceIDUint, err := strconv.ParseUint(traceID.(string), 10, 64)
-
-			if err != nil {
-				bavalogs.Error(ctx, err).Msg("error converting traceID")
-			}
-
-			tracerID = traceIDUint
-		}
-
-		if consumer.Args.Tracer.OperationName != "" {
-			ctxTrace, span = tracing.StartContextAndSpan(ctxTrace, tracing.StartContextAndSpanConfig{
-				OperationName: consumer.Args.Tracer.OperationName,
-				SpanType:      consumer.Args.Tracer.SpanType,
-				ResourceName:  consumer.Args.Tracer.ResourceName,
-				TraceID:       tracerID,
-				Tags:          consumer.Args.Tracer.Tags,
-			})
-
-			defer span.Finish()
-		}
-
-		var body []byte
-		if message.Body != nil {
-			body = message.Body
-		}
-
-		var event IncomingEventMessage
-
-		if err := json.Unmarshal(body, &event); err != nil {
-			bavalogs.
-				Error(ctxTrace, err).
-				Interface("corr_id", message.CorrelationId).
-				Interface("queue", consumer.Args.QueueName).
-				Msg("Failed to unmarshal incoming event message, sending message do dlq")
-
-			message.Nack(false, false) //To move to dlq we need to send a Nack with requeue = false
-			return
-		}
-
-		event.Content.ReplyTo = message.ReplyTo
-		event.CorrelationID = message.CorrelationId
-
-		// if tha handler returns true then ACK, else NACK
-		// the message back into the rabbit queue for another round of processing
-		if consumerEvent.Handler(ctxTrace, event) {
-			message.Ack(false)
-		} else if consumer.Args.Redelivery && !message.Redelivered {
-			message.Nack(false, true)
-		} else {
-			message.Nack(false, false)
-		}
-	}
-
 	for i := 0; i < concurrency; i++ {
-		bavalogs.Info(ctx).Interface("queue", consumer.Args.QueueName).Msgf("Processing messages on thread %v", i)
-		go func() {
-			for message := range messages {
-				processMessage(message)
-			}
-		}()
+		for message := range messages {
+			processMessage(consumer.Args.Tracer, consumerEvent.Handler, consumer.Args, message)
+		}
 	}
 
 	return nil
@@ -230,4 +168,63 @@ func (consumer consumerImpl) buildDeadLetterQueue() error {
 
 func (consumer consumerImpl) GetQueue() amqp.Queue {
 	return consumer.queue
+}
+
+func processMessage(tracer tracing.StartContextAndSpanConfig, handler ConsumerEventHandler, args ConsumerArgs, message amqp.Delivery) {
+	var tracerID uint64
+	var span ddtrace.Span
+	ctxTrace := context.Background()
+
+	if traceID, hasTrace := message.Headers["x-datadog-trace-id"]; hasTrace {
+		traceIDUint, err := strconv.ParseUint(traceID.(string), 10, 64)
+
+		if err != nil {
+			bavalogs.Error(ctxTrace, err).Msg("error converting traceID")
+		}
+
+		tracerID = traceIDUint
+	}
+
+	if tracer.OperationName != "" {
+		ctxTrace, span = tracing.StartContextAndSpan(ctxTrace, tracing.StartContextAndSpanConfig{
+			OperationName: tracer.OperationName,
+			SpanType:      tracer.SpanType,
+			ResourceName:  tracer.ResourceName,
+			TraceID:       tracerID,
+			Tags:          tracer.Tags,
+		})
+
+		defer span.Finish()
+	}
+
+	var body []byte
+	if message.Body != nil {
+		body = message.Body
+	}
+
+	var event IncomingEventMessage
+
+	if err := json.Unmarshal(body, &event); err != nil {
+		bavalogs.
+			Error(ctxTrace, err).
+			Interface("corr_id", message.CorrelationId).
+			Interface("queue", args.QueueName).
+			Msg("Failed to unmarshal incoming event message, sending message do dlq")
+
+		message.Nack(false, false) //To move to dlq we need to send a Nack with requeue = false
+		return
+	}
+
+	event.Content.ReplyTo = message.ReplyTo
+	event.CorrelationID = message.CorrelationId
+
+	// if tha handler returns true then ACK, else NACK
+	// the message back into the rabbit queue for another round of processing
+	if handler(ctxTrace, event) {
+		message.Ack(false)
+	} else if args.Redelivery && !message.Redelivered {
+		message.Nack(false, true)
+	} else {
+		message.Nack(false, false)
+	}
 }
