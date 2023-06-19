@@ -37,6 +37,7 @@ type clientImpl struct {
 
 	reconnecting     chan bool
 	heartbeatTimeout *int
+	channelMax       int
 }
 
 // IsClosed indicate closed by developer
@@ -68,7 +69,8 @@ func (client *clientImpl) connect() error {
 	}
 
 	conn, err := amqp.DialConfig(client.credential.GetConnectionString(), amqp.Config{
-		Heartbeat: time.Duration(*client.heartbeatTimeout) * time.Second,
+		Heartbeat:  time.Duration(*client.heartbeatTimeout) * time.Second,
+		ChannelMax: client.channelMax,
 	})
 
 	if err != nil {
@@ -148,6 +150,7 @@ func New(credential Credential, options ClientOptions) (Client, error) {
 		reconnectionDelay: options.ReconnectionDelay,
 		declare:           options.Declare,
 		heartbeatTimeout:  options.HeartbeatTimeout,
+		channelMax:        options.ChannelMax,
 	}
 
 	err := client.connect()

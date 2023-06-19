@@ -14,7 +14,7 @@ import (
 )
 
 type Consumer interface {
-	SubscribeEvents(ctx context.Context, consumerEvent ConsumerEvent, concurrency int) error
+	SubscribeEvents(ctx context.Context, consumerEvent ConsumerEvent) error
 	GetQueue() amqp.Queue
 }
 
@@ -87,19 +87,19 @@ func (consumer *consumerImpl) connect() error {
 	return nil
 }
 
-func (consumer *consumerImpl) SubscribeEvents(ctx context.Context, consumerEvent ConsumerEvent, concurrency int) error {
+func (consumer *consumerImpl) SubscribeEvents(ctx context.Context, consumerEvent ConsumerEvent) error {
 	consumer.client.OnReconnect(func() {
-		err := consumer.createSubscribe(ctx, consumerEvent, concurrency)
+		err := consumer.createSubscribe(ctx, consumerEvent)
 
 		if err != nil {
 			bavalogs.Fatal(ctx, err).Msg("cannot recreate subscriber events in rabbitmq")
 		}
 	})
 
-	return consumer.createSubscribe(ctx, consumerEvent, concurrency)
+	return consumer.createSubscribe(ctx, consumerEvent)
 }
 
-func (consumer *consumerImpl) createSubscribe(ctx context.Context, consumerEvent ConsumerEvent, concurrency int) error {
+func (consumer *consumerImpl) createSubscribe(ctx context.Context, consumerEvent ConsumerEvent) error {
 	var messages <-chan amqp.Delivery
 
 	channel, err := consumer.client.connection.Channel()
@@ -123,10 +123,8 @@ func (consumer *consumerImpl) createSubscribe(ctx context.Context, consumerEvent
 		bavalogs.Info(ctx).Interface("queue", consumer.Args.QueueName).Msg("Consumer channel has been closed")
 	}()
 
-	for i := 0; i < concurrency; i++ {
-		for message := range messages {
-			processMessage(consumer.Args.Tracer, consumerEvent.Handler, consumer.Args, message)
-		}
+	for message := range messages {
+		processMessage(consumer.Args.Tracer, consumerEvent.Handler, consumer.Args, message)
 	}
 
 	return nil

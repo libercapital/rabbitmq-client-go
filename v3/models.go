@@ -33,6 +33,7 @@ type ClientOptions struct {
 	ReconnectionDelay int
 	Declare           bool
 	HeartbeatTimeout  *int
+	ChannelMax        int
 }
 
 func (credential Credential) GetConnectionString() string {
