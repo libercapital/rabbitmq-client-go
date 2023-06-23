@@ -23,7 +23,7 @@ type Client interface {
 	GetConnection() *amqp.Connection
 	Close() error
 	OnReconnect(func())
-	DirectReplyTo(ctx context.Context, exchange, key string, timeout int, messge IncomingEventMessage, trace tracing.StartContextAndSpanConfig) (IncomingEventMessage, error)
+	DirectReplyTo(ctx context.Context, exchange, key string, timeout int, messge IncomingEventMessage, trace tracing.SpanConfig) (IncomingEventMessage, error)
 }
 
 type clientImpl struct {
@@ -187,7 +187,7 @@ func (client *clientImpl) GetConnection() *amqp.Connection {
 
 // DirectReplyTo publish an message into queue and expect an response RPC formart
 // Error can be typeof models.TIMEOUT_ERROR
-func (client *clientImpl) DirectReplyTo(ctx context.Context, exchange, key string, timeout int, message IncomingEventMessage, trace tracing.StartContextAndSpanConfig) (event IncomingEventMessage, err error) {
+func (client *clientImpl) DirectReplyTo(ctx context.Context, exchange, key string, timeout int, message IncomingEventMessage, trace tracing.SpanConfig) (event IncomingEventMessage, err error) {
 	clientId := uuid.NewString()
 
 	expiration := ""

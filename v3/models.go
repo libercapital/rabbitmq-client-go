@@ -60,7 +60,7 @@ type ConsumerArgs struct {
 	TimeToLive     *int //in milliseconds
 	Redelivery     bool
 	Durable        bool
-	Tracer         tracing.StartContextAndSpanConfig
+	Tracer         tracing.SpanConfig
 }
 
 const DeadLetterExchangeName = "default-dlq-exchange"

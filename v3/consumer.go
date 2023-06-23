@@ -168,7 +168,7 @@ func (consumer consumerImpl) GetQueue() amqp.Queue {
 	return consumer.queue
 }
 
-func processMessage(tracer tracing.StartContextAndSpanConfig, handler ConsumerEventHandler, args ConsumerArgs, message amqp.Delivery) {
+func processMessage(tracer tracing.SpanConfig, handler ConsumerEventHandler, args ConsumerArgs, message amqp.Delivery) {
 	var tracerID uint64
 	var span ddtrace.Span
 	ctxTrace := context.Background()
@@ -184,7 +184,7 @@ func processMessage(tracer tracing.StartContextAndSpanConfig, handler ConsumerEv
 	}
 
 	if tracer.OperationName != "" {
-		ctxTrace, span = tracing.StartContextAndSpan(ctxTrace, tracing.StartContextAndSpanConfig{
+		ctxTrace, span = tracing.StartContextAndSpan(ctxTrace, tracing.SpanConfig{
 			OperationName: tracer.OperationName,
 			SpanType:      tracer.SpanType,
 			ResourceName:  tracer.ResourceName,

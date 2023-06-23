@@ -17,7 +17,7 @@ import (
 type Publisher interface {
 	GetQueueName() (*string, error)
 	GetExchangeName() (*string, error)
-	SendMessage(ctx context.Context, exchange string, routingKey string, mandatory bool, immediate bool, message PublishingMessage, trace tracing.StartContextAndSpanConfig) error
+	SendMessage(ctx context.Context, exchange string, routingKey string, mandatory bool, immediate bool, message PublishingMessage, trace tracing.SpanConfig) error
 }
 
 type publisherImpl struct {
@@ -97,7 +97,7 @@ func (publish *publisherImpl) createChannel() error {
 	return nil
 }
 
-func (publish *publisherImpl) SendMessage(ctx context.Context, exchange string, routingKey string, mandatory bool, immediate bool, message PublishingMessage, trace tracing.StartContextAndSpanConfig) (err error) {
+func (publish *publisherImpl) SendMessage(ctx context.Context, exchange string, routingKey string, mandatory bool, immediate bool, message PublishingMessage, trace tracing.SpanConfig) (err error) {
 	if message.ContentType == "" {
 		message.ContentType = "application/json"
 	}
