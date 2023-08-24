@@ -12,7 +12,9 @@ import (
 
 type Consumer interface {
 	SubscribeEvents(ctx context.Context, consumerEvent ConsumerEvent, concurrency int) error
+	SubscribeEventsWithHealthCheck(ctx context.Context, consumerEvent ConsumerEvent, concurrency int, publisher Publisher) error
 	GetQueue() amqp.Queue
+	GetArgs() ConsumerArgs
 }
 
 type consumerImpl struct {
@@ -22,6 +24,10 @@ type consumerImpl struct {
 	closed  int32
 	queue   amqp.Queue
 	declare bool
+}
+
+func (consumer *consumerImpl) GetArgs() ConsumerArgs {
+	return consumer.Args
 }
 
 // IsClosed indicate closed by developer
@@ -96,6 +102,33 @@ func (consumer *consumerImpl) SubscribeEvents(ctx context.Context, consumerEvent
 	return consumer.createSubscribe(ctx, consumerEvent, concurrency)
 }
 
+func (consumer *consumerImpl) SubscribeEventsWithHealthCheck(ctx context.Context, consumerEvent ConsumerEvent, concurrency int, publisher Publisher) error {
+	event := ConsumerEvent{
+		Handler: func(data IncomingEventMessage) bool {
+			if data.Content.Object == EventHealthCheck {
+				ctx := context.Background()
+				publisher.Publish(ctx, data.Content.ReplyTo, data.CorrelationID, "", IncomingEventMessage{
+					Content: Event{
+						Object: EventHealthCheck,
+					},
+				})
+				return true
+			}
+			return consumerEvent.Handler(data)
+		},
+	}
+
+	consumer.client.OnReconnect(func() {
+		err := consumer.createSubscribe(ctx, event, concurrency)
+
+		if err != nil {
+			bavalogs.Fatal(ctx, err).Msg("cannot recreate subscriber events in rabbitmq")
+		}
+	})
+
+	return consumer.createSubscribe(ctx, event, concurrency)
+}
+
 func (consumer *consumerImpl) createSubscribe(ctx context.Context, consumerEvent ConsumerEvent, concurrency int) error {
 	var messages <-chan amqp.Delivery
 
@@ -144,11 +177,19 @@ func (consumer *consumerImpl) createSubscribe(ctx context.Context, consumerEvent
 				event.Content.ReplyTo = message.ReplyTo
 				event.CorrelationID = message.CorrelationId
 
-				bavalogs.Info(ctx).
-					Interface("id", event.Content.ID).
-					Interface("corr_id", message.CorrelationId).
-					Interface("queue", consumer.Args.QueueName).
-					Msg("Received AMQP message")
+				if event.Content.Object == EventHealthCheck {
+					bavalogs.Debug(ctx).
+						Interface("id", event.Content.ID).
+						Interface("corr_id", message.CorrelationId).
+						Interface("queue", consumer.Args.QueueName).
+						Msg("Received Health Check AMQP message")
+				} else {
+					bavalogs.Info(ctx).
+						Interface("id", event.Content.ID).
+						Interface("corr_id", message.CorrelationId).
+						Interface("queue", consumer.Args.QueueName).
+						Msg("Received AMQP message")
+				}
 
 				// if tha handler returns true then ACK, else NACK
 				// the message back into the rabbit queue for another round of processing

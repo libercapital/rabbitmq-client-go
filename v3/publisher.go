@@ -2,6 +2,7 @@ package rabbitmq
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync/atomic"
 
@@ -14,6 +15,7 @@ type Publisher interface {
 	GetQueueName() (*string, error)
 	GetExchangeName() (*string, error)
 	SendMessage(exchange string, routingKey string, mandatory bool, immediate bool, message PublishingMessage) error
+	Publish(ctx context.Context, routerKey string, corrID string, exchange string, payload IncomingEventMessage) error
 }
 
 type publisherImpl struct {
@@ -118,6 +120,29 @@ func (publish *publisherImpl) SendMessage(exchange string, routingKey string, ma
 		immediate,
 		amqp.Publishing(message),
 	)
+}
+
+func (publish *publisherImpl) Publish(ctx context.Context, routerKey string, corrID string, exchange string, payload IncomingEventMessage) error {
+	content, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	message := PublishingMessage{
+		Body:    content,
+		ReplyTo: payload.Content.ReplyTo,
+	}
+
+	if corrID != "" {
+		message.CorrelationId = corrID
+	}
+
+	err = publish.SendMessage(exchange, routerKey, false, false, message)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (publish *publisherImpl) GetQueueName() (*string, error) {
