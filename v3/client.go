@@ -21,6 +21,7 @@ type Client interface {
 	Close() error
 	OnReconnect(func())
 	DirectReplyTo(ctx context.Context, exchange, key string, timeout int, messge IncomingEventMessage) (IncomingEventMessage, error)
+	HealthCheck(publisher Publisher) bool
 }
 
 type clientImpl struct {
@@ -34,6 +35,24 @@ type clientImpl struct {
 
 	reconnecting     chan bool
 	heartbeatTimeout *int
+
+	consumers []Consumer
+}
+
+func (client *clientImpl) HealthCheck(publisher Publisher) bool {
+	ctx := context.Background()
+	for _, consumer := range client.consumers {
+		_, err := client.PublishAndRead(ctx, *consumer.GetArgs().RoutingKey, consumer.GetArgs().ExchangeArgs.Name, 10, IncomingEventMessage{
+			Content: Event{
+				Object: EventHealthCheck,
+			},
+			CorrelationID: uuid.New().String(),
+		})
+		if err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 // IsClosed indicate closed by developer
@@ -171,6 +190,9 @@ func (client *clientImpl) NewConsumer(args ConsumerArgs) (Consumer, error) {
 		client:  client,
 		declare: client.declare,
 	}
+
+	client.consumers = append(client.consumers, &consumer)
+
 	err := consumer.connect()
 	return &consumer, err
 }
@@ -236,4 +258,15 @@ func (client *clientImpl) DirectReplyTo(ctx context.Context, exchange, key strin
 			}
 		}
 	}
+}
+
+func (client *clientImpl) PublishAndRead(ctx context.Context, routerKey string, exchange string, timeout int, message IncomingEventMessage) (IncomingEventMessage, error) {
+	message, err := client.DirectReplyTo(ctx, exchange, routerKey, timeout, message)
+
+	if err != nil {
+		bavalogs.Error(ctx, err).Msg("error RPC message")
+		return IncomingEventMessage{}, err
+	}
+
+	return message, nil
 }
