@@ -264,7 +264,7 @@ func (client *clientImpl) PublishAndRead(ctx context.Context, routerKey string, 
 	message, err := client.DirectReplyTo(ctx, exchange, routerKey, timeout, message)
 
 	if err != nil {
-		bavalogs.Warn(ctx).Interface("exchange", exchange).Interface("router_key", routerKey).Msg("error RPC message")
+		bavalogs.Warn(ctx).Interface("exchange", exchange).Interface("router_key", routerKey).Msg("error RPC message: " + err.Error())
 		return IncomingEventMessage{}, err
 	}
 
