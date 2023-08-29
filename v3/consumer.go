@@ -4,14 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"sync/atomic"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 	"gitlab.com/bavatech/architecture/software/libs/go-modules/bavalogs.git"
+	"gitlab.com/bavatech/architecture/software/libs/go-modules/bavalogs.git/tracing"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 )
 
 type Consumer interface {
-	SubscribeEvents(ctx context.Context, consumerEvent ConsumerEvent, concurrency int) error
+	SubscribeEvents(ctx context.Context, consumerEvent ConsumerEvent) error
 	SubscribeEventsWithHealthCheck(ctx context.Context, consumerEvent ConsumerEvent, concurrency int, publisher Publisher) error
 	GetQueue() amqp.Queue
 	GetArgs() ConsumerArgs
@@ -90,46 +93,44 @@ func (consumer *consumerImpl) connect() error {
 	return nil
 }
 
-func (consumer *consumerImpl) SubscribeEvents(ctx context.Context, consumerEvent ConsumerEvent, concurrency int) error {
+func (consumer *consumerImpl) SubscribeEvents(ctx context.Context, consumerEvent ConsumerEvent) error {
 	consumer.client.OnReconnect(func() {
-		err := consumer.createSubscribe(ctx, consumerEvent, concurrency)
+		err := consumer.createSubscribe(ctx, consumerEvent)
 
 		if err != nil {
 			bavalogs.Fatal(ctx, err).Msg("cannot recreate subscriber events in rabbitmq")
 		}
 	})
 
-	return consumer.createSubscribe(ctx, consumerEvent, concurrency)
+	return consumer.createSubscribe(ctx, consumerEvent)
 }
 
 func (consumer *consumerImpl) SubscribeEventsWithHealthCheck(ctx context.Context, consumerEvent ConsumerEvent, concurrency int, publisher Publisher) error {
 	event := ConsumerEvent{
-		Handler: func(data IncomingEventMessage) bool {
+		Handler: func(ctx context.Context, data IncomingEventMessage) bool {
 			if data.Content.Object == EventHealthCheck {
-				ctx := context.Background()
-				publisher.Publish(ctx, data.Content.ReplyTo, data.CorrelationID, "", IncomingEventMessage{
-					Content: Event{
-						Object: EventHealthCheck,
-					},
-				})
+				publisher.SendMessage(ctx, "", data.Content.ReplyTo, false, false, PublishingMessage{
+					CorrelationId: data.CorrelationID,
+					Body:          []byte(`{"status": "ok"}`),
+				}, tracing.SpanConfig{})
 				return true
 			}
-			return consumerEvent.Handler(data)
+			return consumerEvent.Handler(ctx, data)
 		},
 	}
 
 	consumer.client.OnReconnect(func() {
-		err := consumer.createSubscribe(ctx, event, concurrency)
+		err := consumer.createSubscribe(ctx, event)
 
 		if err != nil {
 			bavalogs.Fatal(ctx, err).Msg("cannot recreate subscriber events in rabbitmq")
 		}
 	})
 
-	return consumer.createSubscribe(ctx, event, concurrency)
+	return consumer.createSubscribe(ctx, event)
 }
 
-func (consumer *consumerImpl) createSubscribe(ctx context.Context, consumerEvent ConsumerEvent, concurrency int) error {
+func (consumer *consumerImpl) createSubscribe(ctx context.Context, consumerEvent ConsumerEvent) error {
 	var messages <-chan amqp.Delivery
 
 	channel, err := consumer.client.connection.Channel()
@@ -153,55 +154,8 @@ func (consumer *consumerImpl) createSubscribe(ctx context.Context, consumerEvent
 		bavalogs.Info(ctx).Interface("queue", consumer.Args.QueueName).Msg("Consumer channel has been closed")
 	}()
 
-	for i := 0; i < concurrency; i++ {
-		bavalogs.Info(ctx).Interface("queue", consumer.Args.QueueName).Msgf("Processing messages on thread %v", i)
-		go func() {
-			for message := range messages {
-				var body []byte
-				if message.Body != nil {
-					body = message.Body
-				}
-
-				var event IncomingEventMessage
-				if err := json.Unmarshal(body, &event); err != nil {
-					bavalogs.
-						Error(ctx, err).
-						Interface("corr_id", message.CorrelationId).
-						Interface("queue", consumer.Args.QueueName).
-						Msg("Failed to unmarshal incoming event message, sending message do dlq")
-
-					message.Nack(false, false) //To move to dlq we need to send a Nack with requeue = false
-					continue
-				}
-
-				event.Content.ReplyTo = message.ReplyTo
-				event.CorrelationID = message.CorrelationId
-
-				if event.Content.Object == EventHealthCheck {
-					bavalogs.Debug(ctx).
-						Interface("id", event.Content.ID).
-						Interface("corr_id", message.CorrelationId).
-						Interface("queue", consumer.Args.QueueName).
-						Msg("Received Health Check AMQP message")
-				} else {
-					bavalogs.Info(ctx).
-						Interface("id", event.Content.ID).
-						Interface("corr_id", message.CorrelationId).
-						Interface("queue", consumer.Args.QueueName).
-						Msg("Received AMQP message")
-				}
-
-				// if tha handler returns true then ACK, else NACK
-				// the message back into the rabbit queue for another round of processing
-				if consumerEvent.Handler(event) {
-					message.Ack(false)
-				} else if consumer.Args.Redelivery && !message.Redelivered {
-					message.Nack(false, true)
-				} else {
-					message.Nack(false, false)
-				}
-			}
-		}()
+	for message := range messages {
+		processMessage(consumer.Args.Tracer, consumerEvent.Handler, consumer.Args, message)
 	}
 
 	return nil
@@ -243,4 +197,77 @@ func (consumer consumerImpl) buildDeadLetterQueue() error {
 
 func (consumer consumerImpl) GetQueue() amqp.Queue {
 	return consumer.queue
+}
+
+func processMessage(tracer tracing.SpanConfig, handler ConsumerEventHandler, args ConsumerArgs, message amqp.Delivery) {
+	var tracerID uint64
+	var span ddtrace.Span
+	ctxTrace := context.Background()
+
+	if traceID, hasTrace := message.Headers["x-datadog-trace-id"]; hasTrace {
+		traceIDUint, err := strconv.ParseUint(traceID.(string), 10, 64)
+
+		if err != nil {
+			bavalogs.Error(ctxTrace, err).Msg("error converting traceID")
+		}
+
+		tracerID = traceIDUint
+	}
+
+	if tracer.OperationName != "" {
+		ctxTrace, span = tracing.StartContextAndSpan(ctxTrace, tracing.SpanConfig{
+			OperationName: tracer.OperationName,
+			SpanType:      tracer.SpanType,
+			ResourceName:  tracer.ResourceName,
+			TraceID:       tracerID,
+			Tags:          tracer.Tags,
+		})
+
+		defer span.Finish()
+	}
+
+	var body []byte
+	if message.Body != nil {
+		body = message.Body
+	}
+
+	var event IncomingEventMessage
+
+	if err := json.Unmarshal(body, &event); err != nil {
+		bavalogs.
+			Error(ctxTrace, err).
+			Interface("corr_id", message.CorrelationId).
+			Interface("queue", args.QueueName).
+			Msg("Failed to unmarshal incoming event message, sending message do dlq")
+
+		message.Nack(false, false) //To move to dlq we need to send a Nack with requeue = false
+		return
+	}
+
+	event.Content.ReplyTo = message.ReplyTo
+	event.CorrelationID = message.CorrelationId
+
+	if event.Content.Object == EventHealthCheck {
+		bavalogs.Debug(ctxTrace).
+			Interface("id", event.Content.ID).
+			Interface("corr_id", message.CorrelationId).
+			Interface("queue", args.QueueName).
+			Msg("Received Health Check AMQP message")
+	} else {
+		bavalogs.Debug(ctxTrace).
+			Interface("id", event.Content.ID).
+			Interface("corr_id", message.CorrelationId).
+			Interface("queue", args.QueueName).
+			Msg("Received AMQP message")
+	}
+
+	// if tha handler returns true then ACK, else NACK
+	// the message back into the rabbit queue for another round of processing
+	if handler(ctxTrace, event) {
+		message.Ack(false)
+	} else if args.Redelivery && !message.Redelivered {
+		message.Nack(false, true)
+	} else {
+		message.Nack(false, false)
+	}
 }
