@@ -12,6 +12,9 @@ import (
 	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"gitlab.com/bavatech/architecture/software/libs/go-modules/bavalogs.git"
+	"gitlab.com/bavatech/architecture/software/libs/go-modules/bavalogs.git/tracing"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 type Client interface {
@@ -20,7 +23,7 @@ type Client interface {
 	GetConnection() *amqp.Connection
 	Close() error
 	OnReconnect(func())
-	DirectReplyTo(ctx context.Context, exchange, key string, timeout int, messge IncomingEventMessage) (IncomingEventMessage, error)
+	DirectReplyTo(ctx context.Context, exchange, key string, timeout int, messge IncomingEventMessage, trace tracing.SpanConfig) (IncomingEventMessage, error)
 	HealthCheck(publisher Publisher) bool
 }
 
@@ -35,6 +38,7 @@ type clientImpl struct {
 
 	reconnecting     chan bool
 	heartbeatTimeout *int
+	channelMax       int
 
 	consumers []Consumer
 }
@@ -42,13 +46,14 @@ type clientImpl struct {
 func (client *clientImpl) HealthCheck(publisher Publisher) bool {
 	ctx := context.Background()
 	for _, consumer := range client.consumers {
-		_, err := client.PublishAndRead(ctx, *consumer.GetArgs().RoutingKey, consumer.GetArgs().ExchangeArgs.Name, 10, IncomingEventMessage{
+		_, err := client.DirectReplyTo(ctx, consumer.GetArgs().ExchangeArgs.Name, *consumer.GetArgs().RoutingKey, 10, IncomingEventMessage{
 			Content: Event{
 				Object: EventHealthCheck,
 			},
 			CorrelationID: uuid.New().String(),
-		})
+		}, tracing.SpanConfig{})
 		if err != nil {
+			bavalogs.Warn(ctx).Interface("exchange", consumer.GetArgs().ExchangeArgs.Name).Interface("router_key", *consumer.GetArgs().RoutingKey).Msg("error RPC message: " + err.Error())
 			return false
 		}
 	}
@@ -84,7 +89,8 @@ func (client *clientImpl) connect() error {
 	}
 
 	conn, err := amqp.DialConfig(client.credential.GetConnectionString(), amqp.Config{
-		Heartbeat: time.Duration(*client.heartbeatTimeout) * time.Second,
+		Heartbeat:  time.Duration(*client.heartbeatTimeout) * time.Second,
+		ChannelMax: client.channelMax,
 	})
 
 	if err != nil {
@@ -164,6 +170,7 @@ func New(credential Credential, options ClientOptions) (Client, error) {
 		reconnectionDelay: options.ReconnectionDelay,
 		declare:           options.Declare,
 		heartbeatTimeout:  options.HeartbeatTimeout,
+		channelMax:        options.ChannelMax,
 	}
 
 	err := client.connect()
@@ -203,7 +210,7 @@ func (client *clientImpl) GetConnection() *amqp.Connection {
 
 // DirectReplyTo publish an message into queue and expect an response RPC formart
 // Error can be typeof models.TIMEOUT_ERROR
-func (client *clientImpl) DirectReplyTo(ctx context.Context, exchange, key string, timeout int, message IncomingEventMessage) (event IncomingEventMessage, err error) {
+func (client *clientImpl) DirectReplyTo(ctx context.Context, exchange, key string, timeout int, message IncomingEventMessage, trace tracing.SpanConfig) (event IncomingEventMessage, err error) {
 	clientId := uuid.NewString()
 
 	expiration := ""
@@ -224,12 +231,31 @@ func (client *clientImpl) DirectReplyTo(ctx context.Context, exchange, key strin
 		return
 	}
 
+	var headers amqp.Table
+
+	if trace.OperationName != "" {
+		var span ddtrace.Span
+
+		span, ctx = tracing.StartSpanFromContext(ctx, trace)
+
+		defer func(e *error) {
+			defer span.Finish(tracer.WithError(*e))
+		}(&err)
+	}
+
+	if span, hasTrace := tracing.SpanFromContext(ctx); hasTrace {
+		headers = make(amqp.Table)
+
+		headers["x-datadog-trace-id"] = strconv.FormatUint(span.Context().TraceID(), 10)
+	}
+
 	b, _ := json.Marshal(message)
-	if err = channel.Publish(exchange, key, false, false, amqp.Publishing{
+	if err = channel.PublishWithContext(ctx, exchange, key, false, false, amqp.Publishing{
 		ReplyTo:       "amq.rabbitmq.reply-to",
 		CorrelationId: message.CorrelationID,
 		Expiration:    expiration,
 		Body:          b,
+		Headers:       headers,
 	}); err != nil {
 		return
 	}
@@ -258,15 +284,4 @@ func (client *clientImpl) DirectReplyTo(ctx context.Context, exchange, key strin
 			}
 		}
 	}
-}
-
-func (client *clientImpl) PublishAndRead(ctx context.Context, routerKey string, exchange string, timeout int, message IncomingEventMessage) (IncomingEventMessage, error) {
-	message, err := client.DirectReplyTo(ctx, exchange, routerKey, timeout, message)
-
-	if err != nil {
-		bavalogs.Warn(ctx).Interface("exchange", exchange).Interface("router_key", routerKey).Msg("error RPC message: " + err.Error())
-		return IncomingEventMessage{}, err
-	}
-
-	return message, nil
 }
