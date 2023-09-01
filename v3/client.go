@@ -53,7 +53,7 @@ func (client *clientImpl) HealthCheck(publisher Publisher) bool {
 			CorrelationID: uuid.New().String(),
 		}, tracing.SpanConfig{})
 		if err != nil {
-			bavalogs.Warn(ctx).Interface("vhost", *client.credential.Vhost).Interface("exchange", consumer.GetArgs().ExchangeArgs.Name).Interface("router_key", *consumer.GetArgs().RoutingKey).Msg("error RPC message: " + err.Error())
+			bavalogs.Error(ctx, err).Interface("vhost", *client.credential.Vhost).Interface("exchange", consumer.GetArgs().ExchangeArgs.Name).Interface("router_key", *consumer.GetArgs().RoutingKey).Msg("error RPC message: " + err.Error())
 			return false
 		}
 	}
