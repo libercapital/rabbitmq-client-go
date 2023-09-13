@@ -247,13 +247,7 @@ func processMessage(tracer tracing.SpanConfig, handler ConsumerEventHandler, arg
 	event.Content.ReplyTo = message.ReplyTo
 	event.CorrelationID = message.CorrelationId
 
-	if event.Content.Object == EventHealthCheck {
-		bavalogs.Debug(ctxTrace).
-			Interface("id", event.Content.ID).
-			Interface("corr_id", message.CorrelationId).
-			Interface("queue", args.QueueName).
-			Msg("Received Health Check AMQP message")
-	} else {
+	if event.Content.Object != EventHealthCheck {
 		bavalogs.Debug(ctxTrace).
 			Interface("id", event.Content.ID).
 			Interface("corr_id", message.CorrelationId).
