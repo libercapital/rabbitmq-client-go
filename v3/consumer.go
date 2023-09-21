@@ -95,11 +95,13 @@ func (consumer *consumerImpl) connect() error {
 
 func (consumer *consumerImpl) SubscribeEvents(ctx context.Context, consumerEvent ConsumerEvent) error {
 	consumer.client.OnReconnect(func() {
-		err := consumer.createSubscribe(ctx, consumerEvent)
+		go func() {
+			err := consumer.createSubscribe(ctx, consumerEvent)
 
-		if err != nil {
-			bavalogs.Fatal(ctx, err).Msg("cannot recreate subscriber events in rabbitmq")
-		}
+			if err != nil {
+				bavalogs.Fatal(ctx, err).Msg("cannot recreate subscriber events in rabbitmq")
+			}
+		}()
 	})
 
 	return consumer.createSubscribe(ctx, consumerEvent)
@@ -120,11 +122,13 @@ func (consumer *consumerImpl) SubscribeEventsWithHealthCheck(ctx context.Context
 	}
 
 	consumer.client.OnReconnect(func() {
-		err := consumer.createSubscribe(ctx, event)
+		go func() {
+			err := consumer.createSubscribe(ctx, event)
 
-		if err != nil {
-			bavalogs.Fatal(ctx, err).Msg("cannot recreate subscriber events in rabbitmq")
-		}
+			if err != nil {
+				bavalogs.Fatal(ctx, err).Msg("cannot recreate subscriber events in rabbitmq")
+			}
+		}()
 	})
 
 	return consumer.createSubscribe(ctx, event)
