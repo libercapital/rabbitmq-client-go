@@ -4,7 +4,7 @@ go 1.18
 
 require (
 	github.com/google/uuid v1.3.0
-	github.com/rabbitmq/amqp091-go v1.5.0
+	github.com/rabbitmq/amqp091-go v1.9.0
 	github.com/stretchr/testify v1.8.2
 	gitlab.com/bavatech/architecture/software/libs/go-modules/bavalogs.git v0.6.1-pre.2
 	gopkg.in/DataDog/dd-trace-go.v1 v1.51.0

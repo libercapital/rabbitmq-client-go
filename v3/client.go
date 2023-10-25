@@ -3,7 +3,6 @@ package rabbitmq
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strconv"
 	"sync/atomic"
@@ -99,37 +98,24 @@ func (client *clientImpl) connect() error {
 
 	client.connection = conn
 
-	go func(connParam *amqp.Connection) {
+	go func(client *clientImpl) {
 		for {
-			newConn, err := client.reconnect(connParam, client.credential.GetConnectionString())
-
-			if newConn == nil {
-				errMsg := errors.New("could not reconnect to rabbitmq")
-
-				if err != nil {
-					errMsg = err
-				}
-
-				bavalogs.Fatal(context.Background(), errMsg).Send()
-			}
+			err := client.reconnect()
 
 			if err != nil {
 				bavalogs.Fatal(context.Background(), err).Send()
 			}
 
-			client.connection = newConn
-
 			for _, callback := range client.callbackReconnect {
 				callback()
 			}
 		}
-	}(conn)
+	}(client)
 
 	return nil
 }
 
-func (client *clientImpl) reconnect(connParam *amqp.Connection, credentials string) (*amqp.Connection, error) {
-	var err error
+func (client *clientImpl) reconnect() (err error) {
 	retries := 0
 
 	chanErr := <-client.connection.NotifyClose(make(chan *amqp.Error))
@@ -150,7 +136,10 @@ func (client *clientImpl) reconnect(connParam *amqp.Connection, credentials stri
 
 		time.Sleep(time.Second)
 
-		connParam, err := amqp.Dial(client.credential.GetConnectionString())
+		client.connection, err = amqp.DialConfig(client.credential.GetConnectionString(), amqp.Config{
+			Heartbeat:  time.Duration(*client.heartbeatTimeout) * time.Second,
+			ChannelMax: client.channelMax,
+		})
 
 		if err != nil {
 			bavalogs.Warn(context.Background()).Err(err).Msg("error rabbitmq trying reconnect")
@@ -158,10 +147,10 @@ func (client *clientImpl) reconnect(connParam *amqp.Connection, credentials stri
 			continue
 		}
 
-		return connParam, nil
+		return nil
 	}
 
-	return nil, err
+	return err
 }
 
 func New(credential Credential, options ClientOptions) (Client, error) {
