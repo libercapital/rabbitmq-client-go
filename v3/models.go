@@ -56,6 +56,7 @@ type ConsumerArgs struct {
 	QueueName      *string
 	RoutingKey     *string
 	PrefetchCount  *int
+	QosGlobal      bool
 	DeadLetterName *string
 	TimeToLive     *int //in milliseconds
 	Redelivery     bool

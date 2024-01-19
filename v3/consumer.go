@@ -57,12 +57,12 @@ func (consumer *consumerImpl) connect() error {
 	consumer.channel = channel
 
 	if consumer.Args.PrefetchCount != nil {
-		if err := consumer.channel.Qos(*consumer.Args.PrefetchCount, 0, false); err != nil {
+		if err := consumer.channel.Qos(*consumer.Args.PrefetchCount, 0, consumer.Args.QosGlobal); err != nil {
 			return fmt.Errorf("prefetch count setting error: %v", err)
 		}
 	}
 
-	if consumer.declare == false {
+	if !consumer.declare {
 		return nil
 	}
 
@@ -140,6 +140,12 @@ func (consumer *consumerImpl) createSubscribe(ctx context.Context, consumerEvent
 	channel, err := consumer.client.connection.Channel()
 	if err != nil {
 		return err
+	}
+
+	if consumer.Args.PrefetchCount != nil {
+		if err := channel.Qos(*consumer.Args.PrefetchCount, 0, consumer.Args.QosGlobal); err != nil {
+			return fmt.Errorf("prefetch count setting error: %v", err)
+		}
 	}
 
 	if *consumer.Args.QueueName != "" {
