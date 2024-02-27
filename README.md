@@ -7,7 +7,7 @@
 ## Install
 
 ```go
-go get gitlab.com/bavatech/architecture/software/libs/go-modules/rabbitmq-client.git
+go get github.com/libercapital/rabbitmq-client-go
 ```
 
 ## Usage
@@ -213,32 +213,3 @@ event := rabbitmq.ConsumerEvent{
 ctx := context.Background()
 err = consumer.SubscribeEvents(ctx, event, 5) //5 threads
 ```
-
-## Author
-
-👤 **Eduardo Mello**
-
-- Gitlab: [@eduardo.mello@bavabank.com](https://gitlab.com/eduardo.mello)
-
-## Contributors
-
-👤 **Vinícius Deuner**
-
-- Gitlab: [@vinicius.deuner@bavabank.com](https://gitlab.com/vinicius.deuner)
-
-👤 **Giuseppe Menti**
-
-- Gitlab: [@giuseppe.menti@bavabank.com](https://gitlab.com/giuseppe.menti)
-
-👤 **Henrique Schmidt**
-
-- Github: [@henrique502](https://github.com/henrique502)
-
-
-## Show your support
-
-Give a ⭐️ if this project helped you!
-
----
-
-_This README was generated with ❤️ by [readme-md-generator](https://github.com/kefranabg/readme-md-generator)_
