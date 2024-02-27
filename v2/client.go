@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	liberlogger "github.com/libercapital/liber-logger-go"
 	amqp "github.com/rabbitmq/amqp091-go"
-	"gitlab.com/bavatech/architecture/software/libs/go-modules/bavalogs.git"
 )
 
 type Client interface {
@@ -69,11 +69,11 @@ func (client *clientImpl) connect() error {
 					errMsg = err
 				}
 
-				bavalogs.Fatal(context.Background(), errMsg).Send()
+				liberlogger.Fatal(context.Background(), errMsg).Send()
 			}
 
 			if err != nil {
-				bavalogs.Fatal(context.Background(), err).Send()
+				liberlogger.Fatal(context.Background(), err).Send()
 			}
 
 			client.connection = newConn
@@ -104,7 +104,7 @@ func (client *clientImpl) reconnect(connParam *amqp.Connection, credentials stri
 		connParam, err := amqp.Dial(client.credential.GetConnectionString())
 
 		if err != nil {
-			bavalogs.Warn(context.Background()).Err(err).Msg("rabbitmq trying reconnect")
+			liberlogger.Warn(context.Background()).Err(err).Msg("rabbitmq trying reconnect")
 			retries++
 			continue
 		}

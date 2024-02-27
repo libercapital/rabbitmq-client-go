@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	liberlogger "github.com/libercapital/liber-logger-go"
+	"github.com/libercapital/rabbitmq-client-go/app/models"
 	amqp "github.com/rabbitmq/amqp091-go"
-	"gitlab.com/bavatech/architecture/software/libs/go-modules/bavalogs.git"
-	"gitlab.com/bavatech/architecture/software/libs/go-modules/rabbitmq-client.git/app/models"
 )
 
 type Consumer interface {
@@ -89,7 +89,7 @@ func (consumer *consumerImpl) SubscribeEvents(ctx context.Context, consumerEvent
 		err := consumer.createSubscribe(ctx, consumerEvent, concurrency)
 
 		if err != nil {
-			bavalogs.Fatal(context.Background(), err).Msg("cannot recreate subscriber events in rabbitmq")
+			liberlogger.Fatal(context.Background(), err).Msg("cannot recreate subscriber events in rabbitmq")
 		}
 	})
 
@@ -117,11 +117,11 @@ func (consumer *consumerImpl) createSubscribe(ctx context.Context, consumerEvent
 	go func() {
 		<-ctx.Done()
 		channel.Close()
-		bavalogs.Info(ctx).Interface("queue", consumer.Args.QueueName).Msg("Consumer channel has been closed")
+		liberlogger.Info(ctx).Interface("queue", consumer.Args.QueueName).Msg("Consumer channel has been closed")
 	}()
 
 	for i := 0; i < concurrency; i++ {
-		bavalogs.Info(ctx).Interface("queue", consumer.Args.QueueName).Msgf("Processing messages on thread %v", i)
+		liberlogger.Info(ctx).Interface("queue", consumer.Args.QueueName).Msgf("Processing messages on thread %v", i)
 		go func() {
 			for message := range messages {
 				var body []byte
@@ -131,7 +131,7 @@ func (consumer *consumerImpl) createSubscribe(ctx context.Context, consumerEvent
 
 				var event models.IncomingEventMessage
 				if err := json.Unmarshal(body, &event); err != nil {
-					bavalogs.
+					liberlogger.
 						Error(ctx, err).
 						Interface("corr_id", message.CorrelationId).
 						Interface("queue", consumer.Args.QueueName).
@@ -144,7 +144,7 @@ func (consumer *consumerImpl) createSubscribe(ctx context.Context, consumerEvent
 				event.Content.ReplyTo = message.ReplyTo
 				event.CorrelationID = message.CorrelationId
 
-				bavalogs.Info(ctx).
+				liberlogger.Info(ctx).
 					Interface("id", event.Content.ID).
 					Interface("corr_id", message.CorrelationId).
 					Interface("queue", consumer.Args.QueueName).

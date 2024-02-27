@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"sync/atomic"
 
-	"gitlab.com/bavatech/architecture/software/libs/go-modules/bavalogs.git"
-	"gitlab.com/bavatech/architecture/software/libs/go-modules/bavalogs.git/tracing"
+	liberlogger "github.com/libercapital/liber-logger-go"
+	"github.com/libercapital/liber-logger-go/tracing"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
@@ -39,7 +39,7 @@ func (publisher *publisherImpl) IsClosed() bool {
 
 // Close ensure closed flag set
 func (publisher *publisherImpl) Close() error {
-	bavalogs.Debug(context.Background()).Stack().Msg("closing channel")
+	liberlogger.Debug(context.Background()).Stack().Msg("closing channel")
 
 	if publisher.IsClosed() {
 		return amqp.ErrClosed
@@ -52,12 +52,12 @@ func (publisher *publisherImpl) Close() error {
 
 func (publish *publisherImpl) connect() error {
 	publish.client.OnReconnect(func() {
-		bavalogs.Debug(context.Background()).Bool("connection_isclosed", publish.client.connection.IsClosed()).Msg("reconnecting... creating new channel")
+		liberlogger.Debug(context.Background()).Bool("connection_isclosed", publish.client.connection.IsClosed()).Msg("reconnecting... creating new channel")
 
 		err := publish.createChannel()
 
 		if err != nil {
-			bavalogs.Fatal(context.Background(), err).Msg("cannot recreate publisher channel in rabbitmq")
+			liberlogger.Fatal(context.Background(), err).Msg("cannot recreate publisher channel in rabbitmq")
 		}
 	})
 
@@ -71,7 +71,7 @@ func (publish *publisherImpl) createChannel() error {
 	}
 	publish.channel = channel
 
-	if publish.declare == false {
+	if !publish.declare {
 		return nil
 	}
 
@@ -103,14 +103,14 @@ func (publish *publisherImpl) SendMessage(ctx context.Context, exchange string, 
 	}
 
 	if publish.client.reconnecting != nil {
-		bavalogs.Debug(context.Background()).Interface("publish.channel", publish.channel).Msg("waiting for reconnection")
+		liberlogger.Debug(context.Background()).Interface("publish.channel", publish.channel).Msg("waiting for reconnection")
 		r := <-publish.client.reconnecting
-		bavalogs.Debug(context.Background()).Bool("publish.client.reconnecting", r).Interface("publish.channel", publish.channel).Msg("waiting for reconnection")
+		liberlogger.Debug(context.Background()).Bool("publish.client.reconnecting", r).Interface("publish.channel", publish.channel).Msg("waiting for reconnection")
 	}
 
 	if publish.client.connection.IsClosed() {
 		if err := publish.client.connect(); err != nil {
-			bavalogs.Debug(context.Background()).Err(err).Interface("publish.channel", publish.channel).Msg("failed to reconnect")
+			liberlogger.Debug(context.Background()).Err(err).Interface("publish.channel", publish.channel).Msg("failed to reconnect")
 			return err
 		}
 	}

@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/libercapital/liber-logger-go/tracing"
 	amqp "github.com/rabbitmq/amqp091-go"
-	"gitlab.com/bavatech/architecture/software/libs/go-modules/bavalogs.git/tracing"
 )
 
 var TIMEOUT_ERROR = errors.New("consumer timeout reached")

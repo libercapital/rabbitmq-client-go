@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	liberlogger "github.com/libercapital/liber-logger-go"
+	"github.com/libercapital/liber-logger-go/tracing"
 	amqp "github.com/rabbitmq/amqp091-go"
-	"gitlab.com/bavatech/architecture/software/libs/go-modules/bavalogs.git"
-	"gitlab.com/bavatech/architecture/software/libs/go-modules/bavalogs.git/tracing"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
@@ -52,7 +52,7 @@ func (client *clientImpl) HealthCheck(publisher Publisher) bool {
 			CorrelationID: uuid.New().String(),
 		}, tracing.SpanConfig{})
 		if err != nil {
-			bavalogs.Error(ctx, err).Interface("vhost", *client.credential.Vhost).Interface("exchange", consumer.GetArgs().ExchangeArgs.Name).Interface("router_key", *consumer.GetArgs().RoutingKey).Msg("error RPC message: " + err.Error())
+			liberlogger.Error(ctx, err).Interface("vhost", *client.credential.Vhost).Interface("exchange", consumer.GetArgs().ExchangeArgs.Name).Interface("router_key", *consumer.GetArgs().RoutingKey).Msg("error RPC message: " + err.Error())
 			return false
 		}
 	}
@@ -70,7 +70,7 @@ func (client *clientImpl) OnReconnect(callback func()) {
 
 // Close ensure closed flag set
 func (client *clientImpl) Close() error {
-	bavalogs.Debug(context.Background()).Stack().Msg("closing connection")
+	liberlogger.Debug(context.Background()).Stack().Msg("closing connection")
 
 	if client.IsClosed() {
 		return amqp.ErrClosed
@@ -103,7 +103,7 @@ func (client *clientImpl) connect() error {
 			err := client.reconnect()
 
 			if err != nil {
-				bavalogs.Fatal(context.Background(), err).Send()
+				liberlogger.Fatal(context.Background(), err).Send()
 			}
 
 			for _, callback := range client.callbackReconnect {
@@ -132,7 +132,7 @@ func (client *clientImpl) reconnect() (err error) {
 			break
 		}
 
-		bavalogs.Debug(context.Background()).Interface("chan_err", chanErr).Msg("rabbitmq connection lost, trying reconnect")
+		liberlogger.Debug(context.Background()).Interface("chan_err", chanErr).Msg("rabbitmq connection lost, trying reconnect")
 
 		time.Sleep(time.Second)
 
@@ -142,7 +142,7 @@ func (client *clientImpl) reconnect() (err error) {
 		})
 
 		if err != nil {
-			bavalogs.Warn(context.Background()).Err(err).Msg("error rabbitmq trying reconnect")
+			liberlogger.Warn(context.Background()).Err(err).Msg("error rabbitmq trying reconnect")
 			retries++
 			continue
 		}

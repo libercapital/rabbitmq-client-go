@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sync/atomic"
 
+	liberlogger "github.com/libercapital/liber-logger-go"
 	amqp "github.com/rabbitmq/amqp091-go"
-	"gitlab.com/bavatech/architecture/software/libs/go-modules/bavalogs.git"
 )
 
 type Publisher interface {
@@ -47,7 +47,7 @@ func (publish *publisherImpl) connect() error {
 		err := publish.createChannel()
 
 		if err != nil {
-			bavalogs.Fatal(context.Background(), err).Msg("cannot recreate publisher channel in rabbitmq")
+			liberlogger.Fatal(context.Background(), err).Msg("cannot recreate publisher channel in rabbitmq")
 		}
 	})
 

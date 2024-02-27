@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"sync/atomic"
 
+	liberlogger "github.com/libercapital/liber-logger-go"
+	"github.com/libercapital/liber-logger-go/tracing"
 	amqp "github.com/rabbitmq/amqp091-go"
-	"gitlab.com/bavatech/architecture/software/libs/go-modules/bavalogs.git"
-	"gitlab.com/bavatech/architecture/software/libs/go-modules/bavalogs.git/tracing"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 )
 
@@ -99,7 +99,7 @@ func (consumer *consumerImpl) SubscribeEvents(ctx context.Context, consumerEvent
 			err := consumer.createSubscribe(ctx, consumerEvent)
 
 			if err != nil {
-				bavalogs.Fatal(ctx, err).Msg("cannot recreate subscriber events in rabbitmq")
+				liberlogger.Fatal(ctx, err).Msg("cannot recreate subscriber events in rabbitmq")
 			}
 		}()
 	})
@@ -126,7 +126,7 @@ func (consumer *consumerImpl) SubscribeEventsWithHealthCheck(ctx context.Context
 			err := consumer.createSubscribe(ctx, event)
 
 			if err != nil {
-				bavalogs.Fatal(ctx, err).Msg("cannot recreate subscriber events in rabbitmq")
+				liberlogger.Fatal(ctx, err).Msg("cannot recreate subscriber events in rabbitmq")
 			}
 		}()
 	})
@@ -161,7 +161,7 @@ func (consumer *consumerImpl) createSubscribe(ctx context.Context, consumerEvent
 	go func() {
 		<-ctx.Done()
 		channel.Close()
-		bavalogs.Info(ctx).Interface("queue", consumer.Args.QueueName).Msg("Consumer channel has been closed")
+		liberlogger.Info(ctx).Interface("queue", consumer.Args.QueueName).Msg("Consumer channel has been closed")
 	}()
 
 	for message := range messages {
@@ -218,7 +218,7 @@ func processMessage(tracer tracing.SpanConfig, handler ConsumerEventHandler, arg
 		traceIDUint, err := strconv.ParseUint(traceID.(string), 10, 64)
 
 		if err != nil {
-			bavalogs.Error(ctxTrace, err).Msg("error converting traceID")
+			liberlogger.Error(ctxTrace, err).Msg("error converting traceID")
 		}
 
 		tracerID = traceIDUint
@@ -244,7 +244,7 @@ func processMessage(tracer tracing.SpanConfig, handler ConsumerEventHandler, arg
 	var event IncomingEventMessage
 
 	if err := json.Unmarshal(body, &event); err != nil {
-		bavalogs.
+		liberlogger.
 			Error(ctxTrace, err).
 			Interface("corr_id", message.CorrelationId).
 			Interface("queue", args.QueueName).
@@ -258,7 +258,7 @@ func processMessage(tracer tracing.SpanConfig, handler ConsumerEventHandler, arg
 	event.CorrelationID = message.CorrelationId
 
 	if event.Content.Object != EventHealthCheck {
-		bavalogs.Debug(ctxTrace).
+		liberlogger.Debug(ctxTrace).
 			Interface("id", event.Content.ID).
 			Interface("corr_id", message.CorrelationId).
 			Interface("queue", args.QueueName).
