@@ -7,7 +7,7 @@
 ## Install
 
 ```go
-go get github.com/libercapital/rabbitmq-client-go
+go get github.com/libercapital/rabbitmq-client-go/v3
 ```
 
 ## Usage
