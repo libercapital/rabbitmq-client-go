@@ -132,7 +132,7 @@ func (client *clientImpl) reconnect() (err error) {
 			break
 		}
 
-		liberlogger.Debug(context.Background()).Interface("chan_err", chanErr).Msg("rabbitmq connection lost, trying reconnect")
+		liberlogger.Warn(context.Background()).Interface("chan_err", chanErr).Msg("rabbitmq connection lost, trying reconnect")
 
 		time.Sleep(time.Second)
 
@@ -146,6 +146,8 @@ func (client *clientImpl) reconnect() (err error) {
 			retries++
 			continue
 		}
+
+		liberlogger.Info(context.Background()).Msg("rabbitmq reconnected")
 
 		return nil
 	}
