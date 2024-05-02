@@ -100,14 +100,16 @@ func (client *clientImpl) connect() error {
 
 	go func(client *clientImpl) {
 		for {
-			err := client.reconnect()
+			shouldReconnect, err := client.reconnect()
 
 			if err != nil {
 				liberlogger.Fatal(context.Background(), err).Send()
 			}
 
-			for _, callback := range client.callbackReconnect {
-				callback()
+			if shouldReconnect {
+				for _, callback := range client.callbackReconnect {
+					callback()
+				}
 			}
 		}
 	}(client)
@@ -115,14 +117,14 @@ func (client *clientImpl) connect() error {
 	return nil
 }
 
-func (client *clientImpl) reconnect() (err error) {
+func (client *clientImpl) reconnect() (shouldReconnect bool, err error) {
 	retries := 0
 
 	chanErr := <-client.connection.NotifyClose(make(chan *amqp.Error))
 
 	if chanErr == nil {
 		liberlogger.Debug(context.Background()).Msg("rabbitmq connection closed, no reconnection needed")
-		return nil
+		return false, nil
 	}
 
 	client.reconnecting = make(chan bool)
@@ -154,10 +156,10 @@ func (client *clientImpl) reconnect() (err error) {
 
 		liberlogger.Info(context.Background()).Msg("rabbitmq reconnected")
 
-		return nil
+		return true, nil
 	}
 
-	return err
+	return false, err
 }
 
 func New(credential Credential, options ClientOptions) (Client, error) {
