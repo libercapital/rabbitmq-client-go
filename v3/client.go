@@ -120,6 +120,11 @@ func (client *clientImpl) reconnect() (err error) {
 
 	chanErr := <-client.connection.NotifyClose(make(chan *amqp.Error))
 
+	if chanErr == nil {
+		liberlogger.Debug(context.Background()).Msg("rabbitmq connection closed, no reconnection needed")]
+		return nil
+	}
+
 	client.reconnecting = make(chan bool)
 	defer func() {
 		close(client.reconnecting)
