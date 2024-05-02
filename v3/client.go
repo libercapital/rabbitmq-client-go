@@ -110,6 +110,8 @@ func (client *clientImpl) connect() error {
 				for _, callback := range client.callbackReconnect {
 					callback()
 				}
+			} else {
+				break
 			}
 		}
 	}(client)
