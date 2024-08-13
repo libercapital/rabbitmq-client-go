@@ -89,7 +89,7 @@ func (client *clientImpl) connect() error {
 
 	conn, err := amqp.DialConfig(client.credential.GetConnectionString(), amqp.Config{
 		Heartbeat:  time.Duration(*client.heartbeatTimeout) * time.Second,
-		ChannelMax: client.channelMax,
+		ChannelMax: uint16(client.channelMax),
 	})
 
 	if err != nil {
@@ -147,7 +147,7 @@ func (client *clientImpl) reconnect() (shouldReconnect bool, err error) {
 
 		client.connection, err = amqp.DialConfig(client.credential.GetConnectionString(), amqp.Config{
 			Heartbeat:  time.Duration(*client.heartbeatTimeout) * time.Second,
-			ChannelMax: client.channelMax,
+			ChannelMax: uint16(client.channelMax),
 		})
 
 		if err != nil {

@@ -5,7 +5,7 @@ go 1.22
 require (
 	github.com/google/uuid v1.6.0
 	github.com/libercapital/liber-logger-go v1.1.1
-	github.com/rabbitmq/amqp091-go v1.9.0
+	github.com/rabbitmq/amqp091-go v1.10.0
 	github.com/stretchr/testify v1.8.4
 	gopkg.in/DataDog/dd-trace-go.v1 v1.60.3
 )
