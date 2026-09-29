@@ -126,7 +126,9 @@ func (publish *publisherImpl) SendMessage(ctx context.Context, exchange string, 
 	}
 
 	if span, ok := tracing.SpanFromContext(ctx); ok {
-		message.Headers = make(amqp.Table)
+		if message.Headers == nil {
+			message.Headers = make(amqp.Table)
+		}
 
 		message.Headers["x-datadog-trace-id"] = strconv.FormatUint(span.Context().TraceID(), 10)
 	}
