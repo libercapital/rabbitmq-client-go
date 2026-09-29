@@ -3,7 +3,6 @@ package rabbitmq
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"sync/atomic"
 
 	liberlogger "github.com/libercapital/liber-logger-go"
@@ -125,13 +124,7 @@ func (publish *publisherImpl) SendMessage(ctx context.Context, exchange string, 
 		}(&err)
 	}
 
-	if span, ok := tracing.SpanFromContext(ctx); ok {
-		if message.Headers == nil {
-			message.Headers = make(amqp.Table)
-		}
-
-		message.Headers["x-datadog-trace-id"] = strconv.FormatUint(span.Context().TraceID(), 10)
-	}
+	message.Headers = injectTraceHeaders(ctx, message.Headers)
 
 	return publish.channel.PublishWithContext(
 		ctx,

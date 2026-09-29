@@ -11,6 +11,7 @@ import (
 	"github.com/libercapital/liber-logger-go/tracing"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	ddtracer "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 type Consumer interface {
@@ -210,29 +211,8 @@ func (consumer consumerImpl) GetQueue() amqp.Queue {
 }
 
 func processMessage(tracer tracing.SpanConfig, handler ConsumerEventHandler, args ConsumerArgs, message amqp.Delivery) {
-	var tracerID uint64
-	var span ddtrace.Span
-	ctxTrace := context.Background()
-
-	if traceID, hasTrace := message.Headers["x-datadog-trace-id"]; hasTrace {
-		traceIDUint, err := strconv.ParseUint(traceID.(string), 10, 64)
-
-		if err != nil {
-			liberlogger.Error(ctxTrace, err).Msg("error converting traceID")
-		}
-
-		tracerID = traceIDUint
-	}
-
-	if tracer.OperationName != "" {
-		ctxTrace, span = tracing.StartContextAndSpan(ctxTrace, tracing.SpanConfig{
-			OperationName: tracer.OperationName,
-			SpanType:      tracer.SpanType,
-			ResourceName:  tracer.ResourceName,
-			TraceID:       tracerID,
-			Tags:          tracer.Tags,
-		})
-
+	ctxTrace, span := startConsumerSpan(tracer, message.Headers)
+	if span != nil {
 		defer span.Finish()
 	}
 
@@ -274,4 +254,50 @@ func processMessage(tracer tracing.SpanConfig, handler ConsumerEventHandler, arg
 	} else {
 		message.Nack(false, false)
 	}
+}
+
+// startConsumerSpan starts the consumer span as a child of the trace context carried in headers.
+// When only the legacy x-datadog-trace-id header is present it falls back to the TraceID behavior.
+// Without an OperationName no span is created and the returned span is nil.
+func startConsumerSpan(cfg tracing.SpanConfig, headers amqp.Table) (context.Context, ddtrace.Span) {
+	var tracerID uint64
+	ctx := context.Background()
+
+	if traceID, hasTrace := headers[traceIDHeader]; hasTrace {
+		traceIDUint, err := strconv.ParseUint(traceID.(string), 10, 64)
+
+		if err != nil {
+			liberlogger.Error(ctx, err).Msg("error converting traceID")
+		}
+
+		tracerID = traceIDUint
+	}
+
+	if cfg.OperationName == "" {
+		return ctx, nil
+	}
+
+	if parent, err := ddtracer.Extract(amqpHeadersCarrier(headers)); err == nil {
+		opts := []ddtrace.StartSpanOption{
+			ddtracer.ChildOf(parent),
+			ddtracer.SpanType(cfg.SpanType),
+			ddtracer.ResourceName(cfg.ResourceName),
+		}
+
+		for key, value := range cfg.Tags {
+			opts = append(opts, ddtracer.Tag(key, value))
+		}
+
+		span := ddtracer.StartSpan(cfg.OperationName, opts...)
+
+		return tracing.AddTraceAndSpanToLog(ddtracer.ContextWithSpan(ctx, span)), span
+	}
+
+	return tracing.StartContextAndSpan(ctx, tracing.SpanConfig{
+		OperationName: cfg.OperationName,
+		SpanType:      cfg.SpanType,
+		ResourceName:  cfg.ResourceName,
+		TraceID:       tracerID,
+		Tags:          cfg.Tags,
+	})
 }

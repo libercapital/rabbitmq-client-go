@@ -231,8 +231,6 @@ func (client *clientImpl) DirectReplyTo(ctx context.Context, exchange, key strin
 		return
 	}
 
-	var headers amqp.Table
-
 	if trace.OperationName != "" {
 		var span ddtrace.Span
 
@@ -243,11 +241,7 @@ func (client *clientImpl) DirectReplyTo(ctx context.Context, exchange, key strin
 		}(&err)
 	}
 
-	if span, hasTrace := tracing.SpanFromContext(ctx); hasTrace {
-		headers = make(amqp.Table)
-
-		headers["x-datadog-trace-id"] = strconv.FormatUint(span.Context().TraceID(), 10)
-	}
+	headers := injectTraceHeaders(ctx, nil)
 
 	b, _ := json.Marshal(message)
 	if err = channel.PublishWithContext(ctx, exchange, key, false, false, amqp.Publishing{
