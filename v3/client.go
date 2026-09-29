@@ -40,6 +40,25 @@ type clientImpl struct {
 	channelMax       int
 
 	consumers []Consumer
+
+	// openReplyChannel overrides the channel used by DirectReplyTo; nil uses connection.Channel.
+	openReplyChannel func() (replyToChannel, error)
+}
+
+// replyToChannel is the subset of *amqp.Channel used by DirectReplyTo.
+type replyToChannel interface {
+	Consume(queue, consumer string, autoAck, exclusive, noLocal, noWait bool, args amqp.Table) (<-chan amqp.Delivery, error)
+	PublishWithContext(ctx context.Context, exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error
+	Cancel(consumer string, noWait bool) error
+	Close() error
+}
+
+func (client *clientImpl) replyChannel() (replyToChannel, error) {
+	if client.openReplyChannel != nil {
+		return client.openReplyChannel()
+	}
+
+	return client.connection.Channel()
 }
 
 func (client *clientImpl) HealthCheck(publisher Publisher) bool {
@@ -221,7 +240,7 @@ func (client *clientImpl) DirectReplyTo(ctx context.Context, exchange, key strin
 		expiration = strconv.Itoa(timeout * 1000)
 	}
 
-	channel, err := client.connection.Channel()
+	channel, err := client.replyChannel()
 	if err != nil {
 		return
 	}

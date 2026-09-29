@@ -34,6 +34,7 @@ func (discardLogger) Log(string) {}
 func startRealTracer(t *testing.T) {
 	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
 	t.Setenv("DD_TRACE_STARTUP_LOGS", "false")
+	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "false")
 	t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
 
 	ddtracer.Start(
@@ -69,6 +70,71 @@ func logFields(t *testing.T, ctx context.Context) map[string]interface{} {
 
 	return fields
 }
+
+func finishedSpan(t *testing.T, mt mocktracer.Tracer, spanID uint64) mocktracer.Span {
+	t.Helper()
+
+	for _, s := range mt.FinishedSpans() {
+		if s.SpanID() == spanID {
+			return s
+		}
+	}
+
+	require.FailNow(t, "span not finished", "span id %d", spanID)
+
+	return nil
+}
+
+func finishedSpanByName(t *testing.T, mt mocktracer.Tracer, name string) mocktracer.Span {
+	t.Helper()
+
+	for _, s := range mt.FinishedSpans() {
+		if s.OperationName() == name {
+			return s
+		}
+	}
+
+	require.FailNow(t, "span not finished", "operation %s", name)
+
+	return nil
+}
+
+// fakeChannel records publishings; with replies set it answers each publish like a direct reply-to consumer.
+type fakeChannel struct {
+	published []amqp.Publishing
+	replies   chan amqp.Delivery
+}
+
+func (f *fakeChannel) PublishWithContext(_ context.Context, _, _ string, _, _ bool, msg amqp.Publishing) error {
+	f.published = append(f.published, msg)
+
+	if f.replies != nil {
+		f.replies <- amqp.Delivery{CorrelationId: msg.CorrelationId, Body: []byte(`{}`)}
+	}
+
+	return nil
+}
+
+func (f *fakeChannel) Consume(string, string, bool, bool, bool, bool, amqp.Table) (<-chan amqp.Delivery, error) {
+	return f.replies, nil
+}
+
+func (f *fakeChannel) Cancel(string, bool) error { return nil }
+
+func (f *fakeChannel) Close() error { return nil }
+
+// foreignSpan carries a span context the active tracer cannot inject, forcing tracer.Inject to fail.
+type foreignSpan struct{ traceID, spanID uint64 }
+
+func (s foreignSpan) SetTag(string, interface{})                   {}
+func (s foreignSpan) SetOperationName(string)                      {}
+func (s foreignSpan) BaggageItem(string) string                    { return "" }
+func (s foreignSpan) SetBaggageItem(string, string)                {}
+func (s foreignSpan) Finish(...ddtrace.FinishOption)               {}
+func (s foreignSpan) Context() ddtrace.SpanContext                 { return s }
+func (s foreignSpan) SpanID() uint64                               { return s.spanID }
+func (s foreignSpan) TraceID() uint64                              { return s.traceID }
+func (s foreignSpan) ForeachBaggageItem(func(string, string) bool) {}
 
 func TestAmqpHeadersCarrier(t *testing.T) {
 	carrier := amqpHeadersCarrier(amqp.Table{
@@ -120,6 +186,24 @@ func TestInjectTraceHeaders(t *testing.T) {
 		assert.Equal(t, amqp.Table{"x-custom": "v", "x-retry": int32(2)}, caller)
 	})
 
+	t.Run("drops stale caller trace headers when inject fails", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		ctx := ddtracer.ContextWithSpan(context.Background(), foreignSpan{traceID: 42, spanID: 7})
+		headers := injectTraceHeaders(ctx, amqp.Table{
+			"x-custom":                    "v",
+			"x-datadog-trace-id":          "1",
+			"x-datadog-parent-id":         "2",
+			"x-datadog-sampling-priority": "1",
+			"x-datadog-tags":              "_dd.p.tid=abc",
+			"traceparent":                 "00-0000000000000000000000000000abcd-00000000000000ef-01",
+			"tracestate":                  "dd=s:1",
+		})
+
+		assert.Equal(t, amqp.Table{"x-custom": "v", "x-datadog-trace-id": "42"}, headers)
+	})
+
 	t.Run("real tracer writes full datadog context with 128-bit trace id", func(t *testing.T) {
 		startRealTracer(t)
 
@@ -148,20 +232,20 @@ func TestProcessMessageContinuesPublisherTrace(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		pub, pubCtx := ddtracer.StartSpanFromContext(context.Background(), "amqp.publish")
+		// non-root publisher span, so ParentID differs from the trace id
+		root, rootCtx := ddtracer.StartSpanFromContext(context.Background(), "http.request")
+		pub, pubCtx := ddtracer.StartSpanFromContext(rootCtx, "amqp.publish")
+		require.NotEqual(t, pub.Context().TraceID(), pub.Context().SpanID())
 		headers := injectTraceHeaders(pubCtx, nil)
 		pub.Finish()
+		root.Finish()
 
 		ctx := consumeWithHandler(t, consumerSpanConfig, headers)
 
 		span, ok := ddtracer.SpanFromContext(ctx)
 		require.True(t, ok)
+		consumer := finishedSpan(t, mt, span.Context().SpanID())
 
-		finished := mt.FinishedSpans()
-		require.Len(t, finished, 2)
-		consumer := finished[1]
-
-		assert.Equal(t, span.Context().SpanID(), consumer.SpanID())
 		assert.Equal(t, pub.Context().SpanID(), consumer.ParentID())
 		assert.Equal(t, pub.Context().TraceID(), consumer.TraceID())
 		assert.Equal(t, "amqp.consume", consumer.OperationName())
@@ -215,13 +299,7 @@ func TestProcessMessageLegacyTraceIDHeader(t *testing.T) {
 	span, ok := ddtracer.SpanFromContext(ctx)
 	require.True(t, ok)
 
-	var consumer mocktracer.Span
-	for _, s := range mt.FinishedSpans() {
-		if s.SpanID() == span.Context().SpanID() {
-			consumer = s
-		}
-	}
-	require.NotNil(t, consumer)
+	consumer := finishedSpan(t, mt, span.Context().SpanID())
 
 	assert.Equal(t, uint64(12345), consumer.ParentID())
 	assert.Equal(t, uint64(12345), consumer.TraceID())
@@ -263,5 +341,108 @@ func TestProcessMessageWithoutTrace(t *testing.T) {
 		assert.False(t, ok)
 		assert.Nil(t, ctx.Value(liberlogger.LogFieldsKey{}))
 		assert.Empty(t, mt.FinishedSpans())
+	})
+}
+
+// AC9 through the public API: SendMessage keeps caller headers and adds the trace context.
+func TestSendMessageInjectsTraceHeaders(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	channel := &fakeChannel{}
+	publisher := &publisherImpl{client: &clientImpl{connection: &amqp.Connection{}}, channel: channel}
+
+	root, ctx := ddtracer.StartSpanFromContext(context.Background(), "http.request")
+	defer root.Finish()
+
+	err := publisher.SendMessage(ctx, "exchange", "key", false, false,
+		PublishingMessage{Headers: amqp.Table{"x-custom": "v"}},
+		tracing.SpanConfig{OperationName: "amqp.publish"},
+	)
+	require.NoError(t, err)
+	require.Len(t, channel.published, 1)
+
+	pub := finishedSpanByName(t, mt, "amqp.publish")
+	headers := channel.published[0].Headers
+
+	assert.Equal(t, "v", headers["x-custom"])
+	assert.Equal(t, strconv.FormatUint(root.Context().TraceID(), 10), headers["x-datadog-trace-id"])
+	assert.Equal(t, strconv.FormatUint(pub.SpanID(), 10), headers["x-datadog-parent-id"])
+}
+
+// AC9 through the public API: DirectReplyTo publishes the trace context.
+func TestDirectReplyToInjectsTraceHeaders(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	channel := &fakeChannel{replies: make(chan amqp.Delivery, 1)}
+	client := &clientImpl{openReplyChannel: func() (replyToChannel, error) { return channel, nil }}
+
+	root, ctx := ddtracer.StartSpanFromContext(context.Background(), "http.request")
+	defer root.Finish()
+
+	_, err := client.DirectReplyTo(ctx, "exchange", "key", 0,
+		IncomingEventMessage{CorrelationID: "corr-1"},
+		tracing.SpanConfig{OperationName: "amqp.rpc"},
+	)
+	require.NoError(t, err)
+	require.Len(t, channel.published, 1)
+
+	rpc := finishedSpanByName(t, mt, "amqp.rpc")
+	headers := channel.published[0].Headers
+
+	assert.Equal(t, "corr-1", channel.published[0].CorrelationId)
+	assert.Equal(t, strconv.FormatUint(root.Context().TraceID(), 10), headers["x-datadog-trace-id"])
+	assert.Equal(t, strconv.FormatUint(rpc.SpanID(), 10), headers["x-datadog-parent-id"])
+}
+
+// Legacy header edge cases: never panic, invalid values give a root span, full context wins.
+func TestProcessMessageLegacyHeaderEdgeCases(t *testing.T) {
+	for name, value := range map[string]interface{}{
+		"non-string value": int64(12345),
+		"malformed value":  "not-a-number",
+	} {
+		t.Run(name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			var ctx context.Context
+			require.NotPanics(t, func() {
+				ctx = consumeWithHandler(t, consumerSpanConfig, amqp.Table{"x-datadog-trace-id": value})
+			})
+
+			span, ok := ddtracer.SpanFromContext(ctx)
+			require.True(t, ok)
+			assert.Equal(t, uint64(0), finishedSpan(t, mt, span.Context().SpanID()).ParentID())
+		})
+	}
+
+	t.Run("[]byte legacy value is accepted", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		ctx := consumeWithHandler(t, consumerSpanConfig, amqp.Table{"x-datadog-trace-id": []byte("12345")})
+
+		span, ok := ddtracer.SpanFromContext(ctx)
+		require.True(t, ok)
+		assert.Equal(t, uint64(12345), finishedSpan(t, mt, span.Context().SpanID()).ParentID())
+	})
+
+	t.Run("full context wins over conflicting legacy header", func(t *testing.T) {
+		startRealTracer(t)
+
+		// datadog extraction fails without parent id, W3C traceparent carries the full context
+		ctx := consumeWithHandler(t, consumerSpanConfig, amqp.Table{
+			"x-datadog-trace-id": "999",
+			"traceparent":        "00-0000000000000001000000000000abcd-00000000000000ef-01",
+		})
+
+		span, ok := ddtracer.SpanFromContext(ctx)
+		require.True(t, ok)
+
+		assert.Equal(t, "0000000000000001000000000000abcd", span.Context().(ddtrace.SpanContextW3C).TraceID128())
+		stringer, ok := span.(fmt.Stringer)
+		require.True(t, ok)
+		assert.Contains(t, stringer.String(), fmt.Sprintf("ParentID: %d\n", 0xef))
 	})
 }

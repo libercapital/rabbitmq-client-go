@@ -19,12 +19,18 @@ type Publisher interface {
 	SendMessage(ctx context.Context, exchange string, routingKey string, mandatory bool, immediate bool, message PublishingMessage, trace tracing.SpanConfig) error
 }
 
+// publishChannel is the subset of *amqp.Channel used after the channel is created.
+type publishChannel interface {
+	PublishWithContext(ctx context.Context, exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error
+	Close() error
+}
+
 type publisherImpl struct {
 	queueArgs    *QueueArgs
 	exchangeArgs *ExchangeArgs
 	client       *clientImpl
 
-	channel      *amqp.Channel
+	channel      publishChannel
 	queue        *amqp.Queue
 	exchangeName *string
 	closed       int32

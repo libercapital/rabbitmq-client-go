@@ -11,6 +11,16 @@ import (
 
 const traceIDHeader = "x-datadog-trace-id"
 
+var traceHeaders = []string{
+	traceIDHeader,
+	"x-datadog-parent-id",
+	"x-datadog-sampling-priority",
+	"x-datadog-origin",
+	"x-datadog-tags",
+	"traceparent",
+	"tracestate",
+}
+
 // amqpHeadersCarrier adapts amqp.Table to the Datadog TextMapWriter/TextMapReader interfaces.
 type amqpHeadersCarrier amqp.Table
 
@@ -56,6 +66,11 @@ func injectTraceHeaders(ctx context.Context, headers amqp.Table) amqp.Table {
 	out := make(amqp.Table, len(headers))
 	for key, val := range headers {
 		out[key] = val
+	}
+
+	// trace headers sent by the caller would describe another span, so the injected context replaces them
+	for _, key := range traceHeaders {
+		delete(out, key)
 	}
 
 	_ = tracer.Inject(span.Context(), amqpHeadersCarrier(out))

@@ -257,21 +257,13 @@ func processMessage(tracer tracing.SpanConfig, handler ConsumerEventHandler, arg
 }
 
 // startConsumerSpan starts the consumer span as a child of the trace context carried in headers.
-// When only the legacy x-datadog-trace-id header is present it falls back to the TraceID behavior.
+// When extraction fails it falls back to the legacy x-datadog-trace-id header (TraceID behavior).
 // Without an OperationName no span is created and the returned span is nil.
+//
+// On the extracted path the span sets no service name, so it takes the global tracer service
+// (set by tracing.StartTrace or DD_SERVICE), which is the same service tracing.StartContextAndSpan uses.
 func startConsumerSpan(cfg tracing.SpanConfig, headers amqp.Table) (context.Context, ddtrace.Span) {
-	var tracerID uint64
 	ctx := context.Background()
-
-	if traceID, hasTrace := headers[traceIDHeader]; hasTrace {
-		traceIDUint, err := strconv.ParseUint(traceID.(string), 10, 64)
-
-		if err != nil {
-			liberlogger.Error(ctx, err).Msg("error converting traceID")
-		}
-
-		tracerID = traceIDUint
-	}
 
 	if cfg.OperationName == "" {
 		return ctx, nil
@@ -297,7 +289,35 @@ func startConsumerSpan(cfg tracing.SpanConfig, headers amqp.Table) (context.Cont
 		OperationName: cfg.OperationName,
 		SpanType:      cfg.SpanType,
 		ResourceName:  cfg.ResourceName,
-		TraceID:       tracerID,
+		TraceID:       legacyTraceID(ctx, headers),
 		Tags:          cfg.Tags,
 	})
+}
+
+// legacyTraceID reads the x-datadog-trace-id header sent by publishers without full propagation; 0 when absent or invalid.
+func legacyTraceID(ctx context.Context, headers amqp.Table) uint64 {
+	raw, ok := headers[traceIDHeader]
+	if !ok {
+		return 0
+	}
+
+	var value string
+
+	switch v := raw.(type) {
+	case string:
+		value = v
+	case []byte:
+		value = string(v)
+	default:
+		liberlogger.Error(ctx, fmt.Errorf("unexpected %s header type %T", traceIDHeader, raw)).Msg("error converting traceID")
+		return 0
+	}
+
+	traceID, err := strconv.ParseUint(value, 10, 64)
+	if err != nil {
+		liberlogger.Error(ctx, err).Msg("error converting traceID")
+		return 0
+	}
+
+	return traceID
 }
