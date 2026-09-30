@@ -3,7 +3,6 @@ package rabbitmq
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"sync/atomic"
 
 	liberlogger "github.com/libercapital/liber-logger-go"
@@ -20,12 +19,18 @@ type Publisher interface {
 	SendMessage(ctx context.Context, exchange string, routingKey string, mandatory bool, immediate bool, message PublishingMessage, trace tracing.SpanConfig) error
 }
 
+// publishChannel is the subset of *amqp.Channel used after the channel is created.
+type publishChannel interface {
+	PublishWithContext(ctx context.Context, exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error
+	Close() error
+}
+
 type publisherImpl struct {
 	queueArgs    *QueueArgs
 	exchangeArgs *ExchangeArgs
 	client       *clientImpl
 
-	channel      *amqp.Channel
+	channel      publishChannel
 	queue        *amqp.Queue
 	exchangeName *string
 	closed       int32
@@ -125,11 +130,7 @@ func (publish *publisherImpl) SendMessage(ctx context.Context, exchange string, 
 		}(&err)
 	}
 
-	if span, ok := tracing.SpanFromContext(ctx); ok {
-		message.Headers = make(amqp.Table)
-
-		message.Headers["x-datadog-trace-id"] = strconv.FormatUint(span.Context().TraceID(), 10)
-	}
+	message.Headers = injectTraceHeaders(ctx, message.Headers)
 
 	return publish.channel.PublishWithContext(
 		ctx,
